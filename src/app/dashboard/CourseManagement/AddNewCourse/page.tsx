@@ -1,0 +1,1094 @@
+"use client";
+
+import React, { useState, useRef, useEffect, useCallback } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import toast, { Toaster } from "react-hot-toast";
+import axios from "@/utils/axios"; // your axios instance (baseURL -> http://localhost:8000/api)
+import { uploadToCloudinary } from "@/services/cloudinaryUpload";
+import {
+  AdminCard,
+  AdminInput,
+  AdminTextarea,
+} from "../../AllPages/CorporateTraining/components/AdminUI";
+
+/**
+ * AddNewCoursePage (Step 1 -> Step 2)
+ *
+ * - New course: POST /courses (multipart/form-data) -> returns { id }
+ * - Edit course: PUT /courses/{id} and PUT /course-details/{id}
+ * - Step 2: POST /course-details or PUT /course-details/{id}
+ *
+ * NOTE:
+ *  - backend must accept file input named 'image' and/or image URL string in body.
+ *  - adjust axios baseURL if needed (src/utils/axios.ts).
+ */
+
+export default function AddNewCoursePage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const [step, setStep] = useState<number>(1);
+  const [courseId, setCourseId] = useState<number | null>(null);
+  const [detailsSaved, setDetailsSaved] = useState(false);
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [loadingData, setLoadingData] = useState(false);
+
+  // Step 1 fields (courses table)
+  const [title, setTitle] = useState("");
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [description, setDescription] = useState("");
+  const [price, setPrice] = useState("");
+  const [rating, setRating] = useState("");
+  const [students, setStudents] = useState("");
+  const [categoryId, setCategoryId] = useState("");
+  const [status, setStatus] = useState("none");
+  const [mode, setMode] = useState("active");
+
+  // Step 2 fields - Dynamic arrays for better UX
+  const [subtitle, setSubtitle] = useState("");
+
+  // Agenda: array of weeks with title and description
+  const [agendaWeeks, setAgendaWeeks] = useState([
+    { id: `week-${Date.now()}`, week: 1, title: "", description: "" },
+  ]);
+
+  // Trainers: array of trainer objects with name and role
+  const [trainers, setTrainers] = useState([
+    { id: `trainer-${Date.now()}`, name: "", role: "" },
+  ]);
+
+  // Why Choose Us: array of cards with title and description
+  const [whyChooseCards, setWhyChooseCards] = useState([
+    { id: `card-${Date.now()}`, title: "", description: "" },
+  ]);
+
+  // Why Choose section title + description (matches UI in screenshot)
+  const [whyChooseTitle, setWhyChooseTitle] = useState(
+    "Why Choose Our Program?"
+  );
+  const [whyChooseDescription, setWhyChooseDescription] = useState("");
+
+  // Who Should Join: array of bullet points
+  const [whoShouldJoinItems, setWhoShouldJoinItems] = useState([
+    { id: `item-${Date.now()}`, text: "" },
+  ]);
+
+  // Who Should Join section title + description
+  const [whoJoinTitle, setWhoJoinTitle] = useState("Who Should Join?");
+  const [whoJoinDescription, setWhoJoinDescription] = useState("");
+
+  // Key Outcomes: array of items with icon and text
+  const [keyOutcomesItems, setKeyOutcomesItems] = useState([
+    { id: `outcome-${Date.now()}`, title: "", description: "" },
+  ]);
+
+  // Key outcomes section title + optional description
+  const [keyOutcomesTitle, setKeyOutcomesTitle] = useState(
+    "Key Learning Outcomes"
+  );
+  const [keyOutcomesDescription, setKeyOutcomesDescription] = useState("");
+
+  const [metaTitle, setMetaTitle] = useState("");
+  const [metaDescription, setMetaDescription] = useState("");
+  const [metaKeywords, setMetaKeywords] = useState("");
+
+  // loading states
+  const [savingStep1, setSavingStep1] = useState(false);
+  const [savingStep2, setSavingStep2] = useState(false);
+
+  // file input ref
+  const fileRef = useRef<HTMLInputElement | null>(null);
+
+  // Resolve image URL: if full URL return as-is, otherwise prepend backend origin
+  function resolveImageUrl(img?: string | null) {
+    const fallback = "/default-uploads/default-course.png";
+    if (!img) return fallback;
+    if (/^https?:\/\//i.test(img)) return img;
+    // If the image path does not start with '/', prepend '/storage/'
+    const path = img.startsWith("/") ? img : `/storage/${img}`;
+    const base = (axios.defaults.baseURL || "").replace(/\/?api\/?$/i, "");
+    const url = base + path;
+    console.log("[AddNewCourse] course.image=", img, "resolved=", url);
+    return url;
+  }
+
+  // (moved) Load course data if courseId is in URL (edit mode)
+
+  // Helper function to load course and course-details data
+  const loadCourseData = useCallback(async (id: number) => {
+    try {
+      setLoadingData(true);
+
+      // Fetch course data
+      const courseRes = await axios.get(`/courses/${id}`);
+      const course = courseRes.data?.data || courseRes.data;
+
+      // Populate Step 1 fields
+      setTitle(course.title || "");
+      setDescription(course.description || "");
+      setPrice(course.price?.toString() || "");
+      setRating(course.rating?.toString() || "");
+      setStudents(course.students?.toString() || "");
+      setCategoryId(course.category_id?.toString() || "");
+      setStatus(course.status || "none");
+      setMode(course.mode || "active");
+      if (course.image) {
+        setImagePreview(resolveImageUrl(course.image)); // normalize relative paths to absolute
+      }
+
+      // Fetch course-details data
+      try {
+        const detailsRes = await axios.get(`/course-details?course_id=${id}`);
+        const details = Array.isArray(detailsRes.data) ? detailsRes.data[0] : detailsRes.data?.data?.[0] || detailsRes.data;
+
+        if (details) {
+          // Populate Step 2 fields
+          setSubtitle(details.subtitle || "");
+          setWhyChooseTitle(details.why_choose_title || "Why Choose Our Program?");
+          setWhyChooseDescription(details.why_choose_description || "");
+          setWhoJoinTitle(details.who_join_title || "Who Should Join?");
+          setWhoJoinDescription(details.who_join_description || "");
+          setKeyOutcomesTitle(details.key_outcomes_title || "Key Learning Outcomes");
+          setKeyOutcomesDescription(details.key_outcomes_description || "");
+          setMetaTitle(details.meta_title || "");
+          setMetaDescription(details.meta_description || "");
+          setMetaKeywords(details.meta_keywords || "");
+
+          // Load trainers
+          if (details.trainers && Array.isArray(details.trainers) && details.trainers.length > 0) {
+            setTrainers(
+              details.trainers.map((t: Record<string, string>, idx: number) => ({
+                id: `trainer-${idx}`,
+                name: t.name || "",
+                role: t.role || "",
+              }))
+            );
+          }
+
+          // Load agenda
+          if (details.agenda && Array.isArray(details.agenda) && details.agenda.length > 0) {
+            setAgendaWeeks(
+              details.agenda.map((w: Record<string, string | number>, idx: number) => ({
+                id: `week-${idx}`,
+                week: (w.week as number) || idx + 1,
+                title: (w.title as string) || "",
+                description: (w.content as string) || "",
+              }))
+            );
+          }
+
+          // Load why choose cards
+          if (details.why_choose && Array.isArray(details.why_choose) && details.why_choose.length > 0) {
+            setWhyChooseCards(
+              details.why_choose.map((c: Record<string, string>, idx: number) => ({
+                id: `card-${idx}`,
+                title: c.title || "",
+                description: c.description || "",
+              }))
+            );
+          }
+
+          // Load who should join items
+          if (details.who_should_join && Array.isArray(details.who_should_join) && details.who_should_join.length > 0) {
+            setWhoShouldJoinItems(
+              details.who_should_join.map((item: Record<string, string> | string, idx: number) => ({
+                id: `item-${idx}`,
+                text: (typeof item === 'string' ? item : item.text) || "",
+              }))
+            );
+          }
+
+          // Load key outcomes
+          if (details.key_outcomes && Array.isArray(details.key_outcomes) && details.key_outcomes.length > 0) {
+            setKeyOutcomesItems(
+              details.key_outcomes.map((o: Record<string, string>, idx: number) => ({
+                id: `outcome-${idx}`,
+                title: o.title || "",
+                description: o.description || "",
+              }))
+            );
+          }
+
+          setDetailsSaved(true);
+          setStep(1); // Start on Step 1 for edit mode
+          toast.success("Course data loaded successfully");
+        }
+      } catch (err) {
+        console.warn("Failed to load course-details:", err);
+        // Continue without details (Step 2 will be empty)
+      }
+
+      setLoadingData(false);
+    } catch (err: unknown) {
+      console.error("Failed to load course data:", err);
+      let message = "Failed to load course data";
+      if (err && typeof err === "object" && "response" in err) {
+        const errorObj = err as {
+          response?: { data?: { message?: string; error?: string } };
+        };
+        message =
+          errorObj.response?.data?.message ||
+          errorObj.response?.data?.error ||
+          message;
+      }
+      toast.error(message);
+      setLoadingData(false);
+    }
+  }, []);
+
+  // Load course data if courseId is in URL (edit mode)
+  useEffect(() => {
+    const urlCourseId = searchParams.get("courseId");
+    if (urlCourseId) {
+      const id = Number(urlCourseId);
+      setCourseId(id);
+      setIsEditMode(true);
+      loadCourseData(id);
+    }
+  }, [searchParams, loadCourseData]);
+
+  // Warn user if they try to leave before completing Step 2
+  React.useEffect(() => {
+    function handleBeforeUnload(e: BeforeUnloadEvent) {
+      if (courseId && !detailsSaved) {
+        e.preventDefault();
+        e.returnValue = "You have an incomplete course (Step 1 saved). Complete Step 2 or Clear to discard.";
+        return e.returnValue;
+      }
+      return undefined;
+    }
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [courseId, detailsSaved]);
+
+  // preview helper
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0] ?? null;
+    setImageFile(file);
+    if (file) {
+      const url = URL.createObjectURL(file);
+      setImagePreview(url);
+    } else {
+      setImagePreview(null);
+    }
+  }
+
+  // Option: use BannerBox component if you have it, but I'll wire a simple upload handler here:
+  function triggerFilePicker() {
+    fileRef.current?.click();
+  }
+
+  // -------------------------
+  // STEP 1: create or update course
+  // -------------------------
+  async function handleSaveStep1() {
+    if (!title.trim()) {
+      toast.error("Course title is required");
+      return;
+    }
+
+    try {
+      // Prevent duplicate course titles (only check for new courses)
+      if (!isEditMode) {
+        try {
+          const listRes = await axios.get("/courses");
+          const existingArr = Array.isArray(listRes.data) ? listRes.data : listRes.data?.data || [];
+          const conflict = existingArr.find((c: { title?: string }) => (c.title || "").trim().toLowerCase() === title.trim().toLowerCase());
+          if (conflict) {
+            toast.error("A course with the same title already exists. Please choose a different title.");
+            return;
+          }
+        } catch {
+          // ignore errors from listing (backend may not support filters) and continue to create
+        }
+      }
+
+      setSavingStep1(true);
+
+      // Upload image to Cloudinary if a new file was selected
+      let cloudinaryUrl = imagePreview;
+      if (imageFile) {
+        try {
+          toast.loading("Uploading image to Cloudinary...");
+          cloudinaryUrl = await uploadToCloudinary(imageFile);
+          toast.dismiss();
+          toast.success("Image uploaded successfully");
+        } catch {
+          toast.dismiss();
+          toast.error("Failed to upload image to Cloudinary");
+          setSavingStep1(false);
+          return;
+        }
+      }
+
+      // Build JSON payload with Cloudinary URL
+      const payload: {
+        title: string;
+        description: string;
+        status: string;
+          mode: string;
+        price?: number;
+        rating?: number;
+        students?: number;
+        category_id?: number;
+        image?: string;
+      } = {
+        title,
+        description,
+        status: status ?? "none",
+        mode: mode ?? "active",
+      };
+
+      if (price !== "") payload.price = parseFloat(price);
+      if (rating !== "") payload.rating = parseFloat(rating);
+      if (students !== "") payload.students = parseInt(students, 10);
+      if (categoryId !== "") payload.category_id = parseInt(categoryId, 10);
+      
+      // Include the Cloudinary URL as a string (not FormData)
+      if (cloudinaryUrl) {
+        payload.image = cloudinaryUrl;
+      }
+
+      let res;
+      if (isEditMode && courseId) {
+        // UPDATE existing course
+        res = await axios.put(`/courses/${courseId}`, payload);
+        toast.success("Step 1 updated successfully");
+      } else {
+        // CREATE new course
+        res = await axios.post("/courses", payload);
+
+        // backend should return { id: <course_id> }
+        const id = res.data.id ?? res.data?.data?.id ?? null;
+        if (!id) {
+          toast.error("Unexpected response from server (missing id).");
+          setSavingStep1(false);
+          return;
+        }
+
+        setCourseId(Number(id));
+        setDetailsSaved(false);
+        toast.success("Step 1 saved");
+        toast("Please complete Step 2 to finish adding this course. You can click Clear to discard.");
+      }
+
+      setStep(2);
+    } catch (err: unknown) {
+      console.error("save step1 err:", err);
+      let message = "Failed to save Step 1";
+      if (err && typeof err === "object" && "response" in err) {
+        const errorObj = err as {
+          response?: { data?: { message?: string; error?: string } };
+        };
+        message =
+          errorObj.response?.data?.message ||
+          errorObj.response?.data?.error ||
+          message;
+      }
+      toast.error(message);
+    } finally {
+      setSavingStep1(false);
+    }
+  }
+
+  // -------------------------
+  // STEP 2: save or update course details
+  // -------------------------
+  async function handleSaveStep2() {
+    if (!courseId) {
+      toast.error("Missing course id. Save Step 1 first.");
+      return;
+    }
+
+    // subtitle is mandatory per requirements
+    if (!subtitle.trim()) {
+      toast.error("Subtitle is required in Step 2");
+      return;
+    }
+
+    try {
+      setSavingStep2(true);
+
+      // Convert form arrays to proper JSON structure for backend
+      const payload = {
+        course_id: courseId,
+        subtitle: subtitle || null,
+        why_choose_title: whyChooseTitle || null,
+        why_choose_description: whyChooseDescription || null,
+        trainers:
+          trainers
+            .filter((t) => t.name.trim())
+            .map((t) => ({
+              name: t.name,
+              role: t.role,
+            })) || null,
+        agenda:
+          agendaWeeks
+            .filter((w) => w.title.trim())
+            .map((w) => ({
+              week: w.week,
+              title: w.title,
+              content: w.description,
+            })) || null,
+        why_choose:
+          whyChooseCards
+            .filter((c) => c.title.trim())
+            .map((c) => ({
+              title: c.title,
+              description: c.description,
+            })) || null,
+        who_should_join_title: whoJoinTitle || null,
+        who_should_join_description: whoJoinDescription || null,
+        who_should_join:
+          whoShouldJoinItems.filter((i) => i.text.trim()).map((i) => i.text) ||
+          null,
+        key_outcomes_title: keyOutcomesTitle || null,
+        key_outcomes_description: keyOutcomesDescription || null,
+        key_outcomes:
+          keyOutcomesItems
+            .filter((i) => i.title.trim())
+            .map((i) => ({
+              title: i.title,
+              description: i.description,
+            })) || null,
+        meta_title: metaTitle || null,
+        meta_description: metaDescription || null,
+        meta_keywords: metaKeywords || null,
+      };
+
+      if (isEditMode) {
+        // UPDATE existing course details
+        await axios.put(`/course-details/${courseId}`, payload, {
+          headers: { "Content-Type": "application/json" },
+        });
+        toast.success("Course updated successfully!");
+      } else {
+        // CREATE new course details
+        await axios.post("/course-details", payload, {
+          headers: { "Content-Type": "application/json" },
+        });
+        toast.success("Course created successfully!");
+      }
+
+      setDetailsSaved(true);
+  // navigate to course list (All Courses) using Next router
+  router.push('/dashboard/CourseManagement/AllCourses');
+    } catch (err: unknown) {
+      console.error("save step2 err:", err);
+      let message = "Failed to save Step 2";
+      if (err && typeof err === "object" && "response" in err) {
+        const errorObj = err as {
+          response?: { data?: { message?: string; error?: string } };
+        };
+        message =
+          errorObj.response?.data?.message ||
+          errorObj.response?.data?.error ||
+          message;
+      }
+      toast.error(message);
+    } finally {
+      setSavingStep2(false);
+    }
+  }
+
+  return (
+    <>
+      <Toaster />
+      <div className="p-6 space-y-6">
+        <h1 className="text-2xl font-bold">{isEditMode ? "Edit Course" : "Add New Course"}</h1>
+
+        {loadingData ? (
+          <div className="p-8 text-center text-gray-500">Loading course data...</div>
+        ) : (
+          <>
+            {/* ---------------------- STEP 1 UI ---------------------- */}
+            {step === 1 && (
+          <form className="space-y-6" onSubmit={(e) => e.preventDefault()}>
+            <AdminCard title="Course Basic Information">
+              <div className="space-y-4">
+                <AdminInput
+                  label="Course Title*"
+                  value={title}
+                  onChange={setTitle}
+                />
+
+                <AdminTextarea
+                  label="Course Description"
+                  value={description}
+                  onChange={setDescription}
+                  rows={4}
+                />
+
+                {/* Image upload preview + input */}
+                <div className="space-y-2">
+                  <label className="block text-gray-700 font-semibold">
+                    Course Banner Image
+                  </label>
+                  <div className="flex items-center gap-4">
+                    <button
+                      type="button"
+                      onClick={triggerFilePicker}
+                      className="px-4 py-2 bg-blue-700 text-white rounded-lg"
+                    >
+                      Upload Image
+                    </button>
+
+                    <input
+                      ref={fileRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={handleFileChange}
+                    />
+
+                    {imagePreview ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={imagePreview}
+                        alt="Course preview"
+                        className="h-16 w-16 rounded-lg object-cover border"
+                        onError={(e) => {
+                          // fallback to default placeholder if loading fails
+                          (e.currentTarget as HTMLImageElement).src = "/default-uploads/default-course.png";
+                        }}
+                      />
+                    ) : (
+                      <div className="h-16 w-16 rounded-lg border flex items-center justify-center text-sm text-gray-400">
+                        Preview
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <AdminInput label="Price" value={price} onChange={setPrice} />
+                  <AdminInput
+                    label="Rating"
+                    value={rating}
+                    onChange={setRating}
+                  />
+                  <AdminInput
+                    label="Students"
+                    value={students}
+                    onChange={setStudents}
+                  />
+                  <AdminInput
+                    label="Category ID"
+                    value={categoryId}
+                    onChange={setCategoryId}
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-gray-600 font-semibold mb-2">
+                      Status
+                    </label>
+                    <select
+                      className="w-full border rounded-lg px-3 py-2"
+                      value={status}
+                      onChange={(e) => setStatus(e.target.value)}
+                    >
+                      <option value="none">None</option>
+                      <option value="trending">Trending</option>
+                      <option value="popular">Popular</option>
+                      <option value="free">Free</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-gray-600 font-semibold mb-2">
+                      Mode
+                    </label>
+                    <select
+                      className="w-full border rounded-lg px-3 py-2"
+                      value={mode}
+                      onChange={(e) => setMode(e.target.value)}
+                    >
+                      <option value="active">Active</option>
+                      <option value="inactive">Inactive</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+            </AdminCard>
+
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={handleSaveStep1}
+                className="px-6 py-3 bg-blue-700 text-white rounded-lg"
+                disabled={savingStep1}
+              >
+                {savingStep1 ? "Saving..." : isEditMode ? "Update & Next →" : "Save & Next →"}
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  // If a course was created but step2 not saved, delete the incomplete course so user can navigate away
+                  if (courseId && !detailsSaved && !isEditMode) {
+                    try {
+                      await axios.delete(`/courses/${courseId}`);
+                      toast.success("Incomplete course discarded.");
+                    } catch {
+                      // ignore server errors but still clear local state
+                      toast("Cleared locally; server delete failed or not available.");
+                    }
+                    setCourseId(null);
+                    setDetailsSaved(false);
+                    setStep(1);
+                  }
+
+                  // clear form (optional)
+                  setTitle("");
+                  setDescription("");
+                  setImageFile(null);
+                  setImagePreview(null);
+                }}
+                className="px-6 py-3 bg-gray-100 rounded-lg"
+              >
+                Clear
+              </button>
+            </div>
+          </form>
+        )}
+
+        {/* ---------------------- STEP 2 UI ---------------------- */}
+        {step === 2 && (
+          <form className="space-y-6" onSubmit={(e) => e.preventDefault()}>
+            {/* Subtitle */}
+            <AdminCard title="Course Details">
+              <AdminInput
+                label="Subtitle"
+                value={subtitle}
+                onChange={setSubtitle}
+              />
+            </AdminCard>
+
+            {/* Trainers Section */}
+            <AdminCard title="Trainers">
+              <div className="space-y-4">
+                {trainers.map((trainer, idx) => (
+                  <div
+                    key={trainer.id}
+                    className="p-4 border border-gray-300 rounded-lg space-y-3"
+                  >
+                    <div className="flex justify-between items-center mb-2">
+                      <h4 className="font-semibold">Trainer {idx + 1}</h4>
+                      {trainers.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setTrainers(
+                              trainers.filter((t) => t.id !== trainer.id)
+                            )
+                          }
+                          className="text-red-600 text-sm hover:underline"
+                        >
+                          Remove
+                        </button>
+                      )}
+                    </div>
+                    <input
+                      type="text"
+                      placeholder="Trainer Name"
+                      value={trainer.name}
+                      onChange={(e) =>
+                        setTrainers(
+                          trainers.map((t) =>
+                            t.id === trainer.id
+                              ? { ...t, name: e.target.value }
+                              : t
+                          )
+                        )
+                      }
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                    />
+                    <input
+                      type="text"
+                      placeholder="Role/Title (e.g., Senior Developer)"
+                      value={trainer.role}
+                      onChange={(e) =>
+                        setTrainers(
+                          trainers.map((t) =>
+                            t.id === trainer.id
+                              ? { ...t, role: e.target.value }
+                              : t
+                          )
+                        )
+                      }
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                    />
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  onClick={() =>
+                    setTrainers([
+                      ...trainers,
+                      { id: `trainer-${Date.now()}`, name: "", role: "" },
+                    ])
+                  }
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                >
+                  + Add Trainer
+                </button>
+              </div>
+            </AdminCard>
+
+            {/* Agenda/Weeks Section */}
+            <AdminCard title="7-Weeks Training Agenda">
+              <div className="space-y-4">
+                {agendaWeeks.map((week, idx) => (
+                  <div
+                    key={week.id}
+                    className="p-4 border border-gray-300 rounded-lg space-y-3"
+                  >
+                    <div className="flex justify-between items-center mb-2">
+                      <h4 className="font-semibold">Week {idx + 1}</h4>
+                      {agendaWeeks.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setAgendaWeeks(
+                              agendaWeeks.filter((w) => w.id !== week.id)
+                            )
+                          }
+                          className="text-red-600 text-sm hover:underline"
+                        >
+                          Remove
+                        </button>
+                      )}
+                    </div>
+                    <input
+                      type="text"
+                      placeholder="Week Title (e.g., PHP Basics)"
+                      value={week.title}
+                      onChange={(e) =>
+                        setAgendaWeeks(
+                          agendaWeeks.map((w) =>
+                            w.id === week.id
+                              ? { ...w, title: e.target.value }
+                              : w
+                          )
+                        )
+                      }
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                    />
+                    <textarea
+                      placeholder="Week Description/Content"
+                      value={week.description}
+                      onChange={(e) =>
+                        setAgendaWeeks(
+                          agendaWeeks.map((w) =>
+                            w.id === week.id
+                              ? { ...w, description: e.target.value }
+                              : w
+                          )
+                        )
+                      }
+                      rows={3}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                    />
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  onClick={() =>
+                    setAgendaWeeks([
+                      ...agendaWeeks,
+                      {
+                        id: `week-${Date.now()}`,
+                        week: agendaWeeks.length + 1,
+                        title: "",
+                        description: "",
+                      },
+                    ])
+                  }
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                >
+                  + Add Week
+                </button>
+              </div>
+            </AdminCard>
+
+            {/* Why Choose Us Section */}
+            <AdminCard title="Why Choose Us? (Cards)">
+              <div className="space-y-4">
+                <AdminInput
+                  label="Section Title"
+                  value={whyChooseTitle}
+                  onChange={setWhyChooseTitle}
+                />
+                <AdminTextarea
+                  label="Section Description"
+                  value={whyChooseDescription}
+                  onChange={setWhyChooseDescription}
+                  rows={3}
+                />
+                {whyChooseCards.map((card, idx) => (
+                  <div
+                    key={card.id}
+                    className="p-4 border border-gray-300 rounded-lg space-y-3"
+                  >
+                    <div className="flex justify-between items-center mb-2">
+                      <h4 className="font-semibold">Card {idx + 1}</h4>
+                      {whyChooseCards.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setWhyChooseCards(
+                              whyChooseCards.filter((c) => c.id !== card.id)
+                            )
+                          }
+                          className="text-red-600 text-sm hover:underline"
+                        >
+                          Remove
+                        </button>
+                      )}
+                    </div>
+                    <input
+                      type="text"
+                      placeholder="Card Title (e.g., Strong Fundamentals)"
+                      value={card.title}
+                      onChange={(e) =>
+                        setWhyChooseCards(
+                          whyChooseCards.map((c) =>
+                            c.id === card.id
+                              ? { ...c, title: e.target.value }
+                              : c
+                          )
+                        )
+                      }
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                    />
+                    <textarea
+                      placeholder="Card Description"
+                      value={card.description}
+                      onChange={(e) =>
+                        setWhyChooseCards(
+                          whyChooseCards.map((c) =>
+                            c.id === card.id
+                              ? { ...c, description: e.target.value }
+                              : c
+                          )
+                        )
+                      }
+                      rows={2}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                    />
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  onClick={() =>
+                    setWhyChooseCards([
+                      ...whyChooseCards,
+                      { id: `card-${Date.now()}`, title: "", description: "" },
+                    ])
+                  }
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                >
+                  + Add Card
+                </button>
+              </div>
+            </AdminCard>
+
+            {/* Who Should Join Section */}
+            <AdminCard title="Who Should Join? (Bullet Points)">
+              <div className="space-y-4">
+                <AdminInput
+                  label="Section Title"
+                  value={whoJoinTitle}
+                  onChange={setWhoJoinTitle}
+                />
+                <AdminTextarea
+                  label="Section Description"
+                  value={whoJoinDescription}
+                  onChange={setWhoJoinDescription}
+                  rows={3}
+                />
+                {whoShouldJoinItems.map((item) => (
+                  <div key={item.id} className="flex gap-2 items-center">
+                    <input
+                      type="text"
+                      placeholder="Add a point (e.g., Beginners wanting to learn backend)"
+                      value={item.text}
+                      onChange={(e) =>
+                        setWhoShouldJoinItems(
+                          whoShouldJoinItems.map((i) =>
+                            i.id === item.id
+                              ? { ...i, text: e.target.value }
+                              : i
+                          )
+                        )
+                      }
+                      className="flex-1 px-3 py-2 border border-gray-300 rounded-lg"
+                    />
+                    {whoShouldJoinItems.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setWhoShouldJoinItems(
+                            whoShouldJoinItems.filter((i) => i.id !== item.id)
+                          )
+                        }
+                        className="text-red-600 hover:underline"
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  onClick={() =>
+                    setWhoShouldJoinItems([
+                      ...whoShouldJoinItems,
+                      { id: `item-${Date.now()}`, text: "" },
+                    ])
+                  }
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                >
+                  + Add Point
+                </button>
+              </div>
+            </AdminCard>
+
+            {/* Key Outcomes Section */}
+            <AdminCard title="Key Learning Outcomes">
+              <div className="space-y-4">
+                <AdminInput
+                  label="Section Title"
+                  value={keyOutcomesTitle}
+                  onChange={setKeyOutcomesTitle}
+                />
+                <AdminTextarea
+                  label="Section Description"
+                  value={keyOutcomesDescription}
+                  onChange={setKeyOutcomesDescription}
+                  rows={3}
+                />
+                {keyOutcomesItems.map((outcome, idx) => (
+                  <div
+                    key={outcome.id}
+                    className="p-4 border border-gray-300 rounded-lg space-y-3"
+                  >
+                    <div className="flex justify-between items-center mb-2">
+                      <h4 className="font-semibold">Outcome {idx + 1}</h4>
+                      {keyOutcomesItems.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setKeyOutcomesItems(
+                              keyOutcomesItems.filter(
+                                (o) => o.id !== outcome.id
+                              )
+                            )
+                          }
+                          className="text-red-600 text-sm hover:underline"
+                        >
+                          Remove
+                        </button>
+                      )}
+                    </div>
+                    <input
+                      type="text"
+                      placeholder="Outcome Title (e.g., Build REST APIs)"
+                      value={outcome.title}
+                      onChange={(e) =>
+                        setKeyOutcomesItems(
+                          keyOutcomesItems.map((o) =>
+                            o.id === outcome.id
+                              ? { ...o, title: e.target.value }
+                              : o
+                          )
+                        )
+                      }
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                    />
+                    <textarea
+                      placeholder="Outcome Description"
+                      value={outcome.description}
+                      onChange={(e) =>
+                        setKeyOutcomesItems(
+                          keyOutcomesItems.map((o) =>
+                            o.id === outcome.id
+                              ? { ...o, description: e.target.value }
+                              : o
+                          )
+                        )
+                      }
+                      rows={2}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                    />
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  onClick={() =>
+                    setKeyOutcomesItems([
+                      ...keyOutcomesItems,
+                      {
+                        id: `outcome-${Date.now()}`,
+                        title: "",
+                        description: "",
+                      },
+                    ])
+                  }
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                >
+                  + Add Outcome
+                </button>
+              </div>
+            </AdminCard>
+
+            {/* Meta Section */}
+            <AdminCard title="SEO & Meta Information">
+              <div className="space-y-4">
+                <AdminInput
+                  label="Meta Title"
+                  value={metaTitle}
+                  onChange={setMetaTitle}
+                />
+                <AdminTextarea
+                  label="Meta Description"
+                  value={metaDescription}
+                  onChange={setMetaDescription}
+                  rows={3}
+                />
+                <AdminInput
+                  label="Meta Keywords (comma-separated)"
+                  value={metaKeywords}
+                  onChange={setMetaKeywords}
+                />
+              </div>
+            </AdminCard>
+
+            <div className="flex justify-between">
+              <button
+                type="button"
+                onClick={() => setStep(1)}
+                className="px-6 py-3 bg-gray-400 text-white rounded-lg"
+              >
+                ← Back
+              </button>
+
+              <button
+                type="button"
+                onClick={handleSaveStep2}
+                className="px-6 py-3 bg-green-700 text-white rounded-lg"
+                disabled={savingStep2}
+              >
+                {savingStep2 ? "Saving..." : isEditMode ? "Update Course" : "Finish & Save"}
+              </button>
+            </div>
+          </form>
+        )}
+          </>
+        )}
+      </div>
+    </>
+  );
+}

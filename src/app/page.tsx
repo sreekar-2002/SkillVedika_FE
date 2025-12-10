@@ -1,65 +1,340 @@
-import Image from "next/image";
+// "use client";
 
-export default function Home() {
+// import { useState, useEffect } from "react";
+// import { useSearchParams } from "next/navigation";
+// import toast, { Toaster } from "react-hot-toast";
+// import { FiMail, FiLock, FiEye, FiEyeOff, FiLogIn } from "react-icons/fi";
+
+// export default function LoginPage() {
+//   const [email, setEmail] = useState("");
+//   const [password, setPassword] = useState("");
+//   const [showPass, setShowPass] = useState(false);
+//   const [loading, setLoading] = useState(false);
+//   const [error, setError] = useState("");
+
+//   const params = useSearchParams();
+
+//   useEffect(() => {
+//     const token = localStorage.getItem("admin_token");
+//     if (token) window.location.href = "/dashboard";
+//   }, []);
+
+//   // ✅ Show t   oast when redirected after logout
+//   useEffect(() => {
+//     if (params.get("logout") === "1") {
+//       if (!sessionStorage.getItem("logout_toast_shown")) {
+//         toast.success("Logged out successfully!");
+//         sessionStorage.setItem("logout_toast_shown", "yes");
+//       }
+
+//       // clean URL immediately
+//       window.history.replaceState({}, "", "/");
+//     }
+//   }, [params]);
+
+//   const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {
+//     e.preventDefault();
+//     setLoading(true);
+//     setError("");
+
+//     try {
+//       const res = await fetch("http://127.0.0.1:8000/api/admin/login", {
+//         method: "POST",
+//         headers: {
+//           "Content-Type": "application/json",
+//           Accept: "application/json",
+//         },
+//         body: JSON.stringify({ email, password }),
+//       });
+
+//       const data = await res.json();
+
+//       if (!res.ok) {
+//         setError(data.message || "Invalid email or password");
+//         setLoading(false);
+//         return;
+//       }
+
+//       // Save token
+//       localStorage.setItem("admin_token", data.token);
+
+//       // Redirect to dashboard
+//       window.location.href = "/dashboard";
+//     } catch {
+//       setError("Something went wrong. Check backend connection.");
+//     }
+
+//     setLoading(false);
+//   };
+
+//   return (
+//     <>
+//       {/* 🔔 Toast Container */}
+//       <Toaster />
+
+//       <div
+//         className="min-h-screen flex items-center justify-center px-6"
+//         style={{ background: "#0F1E33" }}
+//       >
+//         <div
+//           className="w-full max-w-md bg-white shadow-2xl rounded-2xl p-8"
+//           style={{ borderTop: "4px solid #1A3F66" }}
+//         >
+//           <h1 className="text-3xl font-extrabold text-center mb-2 text-[#1A3F66]">
+//             SkillVedika Admin
+//           </h1>
+//           <p className="text-center text-gray-500 mb-6">Sign in to continue</p>
+
+//           {error && (
+//             <div className="bg-red-100 text-red-600 p-3 rounded-lg mb-4 text-sm">
+//               {error}
+//             </div>
+//           )}
+
+//           <form onSubmit={handleLogin} className="space-y-5">
+//             {/* Email */}
+//             <div>
+//               <label className="block font-medium mb-1">Email</label>
+//               <div className="relative">
+//                 <FiMail className="absolute left-3 top-3 text-gray-400" />
+//                 <input
+//                   type="email"
+//                   required
+//                   placeholder="admin@gmail.com"
+//                   className="w-full border rounded-lg pl-10 p-3 shadow-sm outline-none focus:ring-2 focus:ring-blue-500"
+//                   value={email}
+//                   onChange={(e) => setEmail(e.target.value)}
+//                 />
+//               </div>
+//             </div>
+
+//             {/* Password */}
+//             <div>
+//               <label className="block font-medium mb-1">Password</label>
+//               <div className="relative">
+//                 <FiLock className="absolute left-3 top-3 text-gray-400" />
+//                 <input
+//                   type={showPass ? "text" : "password"}
+//                   required
+//                   placeholder="••••••••"
+//                   className="w-full border rounded-lg pl-10 pr-12 p-3 shadow-sm outline-none focus:ring-2 focus:ring-blue-500"
+//                   value={password}
+//                   onChange={(e) => setPassword(e.target.value)}
+//                 />
+
+//                 <span
+//                   className="absolute right-3 top-3 cursor-pointer text-gray-500"
+//                   onClick={() => setShowPass(!showPass)}
+//                 >
+//                   {showPass ? <FiEyeOff /> : <FiEye />}
+//                 </span>
+//               </div>
+//             </div>
+
+//             <div className="flex justify-end -mt-2 mb-2">
+//               <a
+//                 href="/forgot-password"
+//                 className="text-sm text-blue-600 hover:underline"
+//               >
+//                 Forgot Password?
+//               </a>
+//             </div>
+
+//             {/* Login Button */}
+//             <button
+//               disabled={loading}
+//               className="w-full flex justify-center items-center gap-2 bg-[#1A3F66] text-white py-3 rounded-lg font-semibold hover:bg-[#244f88] transition shadow-md"
+//             >
+//               {loading ? (
+//                 <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+//               ) : (
+//                 <FiLogIn />
+//               )}
+//               {loading ? "Signing in..." : "Login"}
+//             </button>
+//           </form>
+//         </div>
+//       </div>
+//     </>
+//   );
+// }
+
+
+
+
+
+
+
+
+
+
+"use client";
+
+import { useState, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
+import toast, { Toaster } from "react-hot-toast";
+import { FiMail, FiLock, FiEye, FiEyeOff, FiLogIn } from "react-icons/fi";
+
+export default function LoginPage() {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPass, setShowPass] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const params = useSearchParams();
+
+  /* =====================================================
+     REDIRECT TO DASHBOARD IF ALREADY LOGGED IN
+  ===================================================== */
+  useEffect(() => {
+    const token = localStorage.getItem("admin_token");
+    if (token) {
+      window.location.href = "/dashboard";
+    }
+  }, []);
+
+  /* =====================================================
+     SHOW LOGOUT SUCCESS TOAST
+  ===================================================== */
+  useEffect(() => {
+    if (params.get("logout") === "1") {
+      if (!sessionStorage.getItem("logout_toast_shown")) {
+        toast.success("Logged out successfully!");
+        sessionStorage.setItem("logout_toast_shown", "yes");
+      }
+
+      // Remove ?logout=1 from URL
+      window.history.replaceState({}, "", "/");
+    }
+  }, [params]);
+
+  /* =====================================================
+     HANDLE LOGIN
+  ===================================================== */
+  const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setLoading(true);
+    setError("");
+
+    try {
+      const res = await fetch("http://127.0.0.1:8000/api/admin/login", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify({ email, password }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setError(data.message || "Invalid email or password");
+        setLoading(false);
+        return;
+      }
+
+      // Save token
+      localStorage.setItem("admin_token", data.token);
+
+      // Redirect
+      window.location.href = "/dashboard";
+    } catch {
+      setError("Something went wrong. Check backend connection.");
+    }
+
+    setLoading(false);
+  };
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
+    <>
+      <Toaster />
+
+      <div
+        className="min-h-screen flex items-center justify-center px-6"
+        style={{ background: "#0F1E33" }}
+      >
+        <div
+          className="w-full max-w-md bg-white shadow-2xl rounded-2xl p-8"
+          style={{ borderTop: "4px solid #1A3F66" }}
+        >
+          <h1 className="text-3xl font-extrabold text-center mb-2 text-[#1A3F66]">
+            SkillVedika Admin
           </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
+          <p className="text-center text-gray-500 mb-6">Sign in to continue</p>
+
+          {error && (
+            <div className="bg-red-100 text-red-600 p-3 rounded-lg mb-4 text-sm">
+              {error}
+            </div>
+          )}
+
+          <form onSubmit={handleLogin} className="space-y-5">
+            {/* EMAIL */}
+            <div>
+              <label className="block font-medium mb-1">Email</label>
+              <div className="relative">
+                <FiMail className="absolute left-3 top-3 text-gray-400" />
+                <input
+                  type="email"
+                  required
+                  placeholder="admin@gmail.com"
+                  className="w-full border rounded-lg pl-10 p-3 shadow-sm outline-none focus:ring-2 focus:ring-blue-500"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                />
+              </div>
+            </div>
+
+            {/* PASSWORD */}
+            <div>
+              <label className="block font-medium mb-1">Password</label>
+              <div className="relative">
+                <FiLock className="absolute left-3 top-3 text-gray-400" />
+                <input
+                  type={showPass ? "text" : "password"}
+                  required
+                  placeholder="••••••••"
+                  className="w-full border rounded-lg pl-10 pr-12 p-3 shadow-sm outline-none focus:ring-2 focus:ring-blue-500"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                />
+
+                <span
+                  className="absolute right-3 top-3 cursor-pointer text-gray-500"
+                  onClick={() => setShowPass(!showPass)}
+                >
+                  {showPass ? <FiEyeOff /> : <FiEye />}
+                </span>
+              </div>
+            </div>
+
+            {/* FORGOT PASSWORD */}
+            <div className="flex justify-end -mt-2 mb-2">
+              <a
+                href="/forgot-password"
+                className="text-sm text-blue-600 hover:underline"
+              >
+                Forgot Password?
+              </a>
+            </div>
+
+            {/* LOGIN BUTTON */}
+            <button
+              disabled={loading}
+              className="w-full flex justify-center items-center gap-2 bg-[#1A3F66] text-white py-3 rounded-lg font-semibold hover:bg-[#244f88] transition shadow-md"
             >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+              {loading ? (
+                <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+              ) : (
+                <FiLogIn />
+              )}
+              {loading ? "Signing in..." : "Login"}
+            </button>
+          </form>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
+      </div>
+    </>
   );
 }

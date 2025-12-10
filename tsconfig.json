@@ -29,6 +29,9 @@
     ".next/types/**/*.ts",
     ".next/dev/types/**/*.ts",
     "**/*.mts"
-  ],
+, "src/app/dashboard/AllPages/CorporateTraining/components/AdminUI.tsx", "src/app/dashboard/AllPages/About/page.tsx", "src/app/about/route.js"  ],
   "exclude": ["node_modules"]
+
+
 }
+
