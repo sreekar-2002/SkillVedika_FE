@@ -12,21 +12,30 @@ export default function ForgotPasswordPage() {
     setLoading(true);
 
     try {
-      const res = await fetch(
-        "http://127.0.0.1:8000/api/admin/forgot-password",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email }),
-        }
-      );
+      const res = await fetch("/api/admin/forgot-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
 
-      const data = await res.json();
+      // Read text and attempt to parse JSON (handle HTML errors gracefully)
+      const text = await res.text();
+      let parsed = null;
+      try {
+        parsed = JSON.parse(text);
+      } catch {
+        parsed = null;
+      }
 
       if (res.ok) {
-        toast.success("Password reset link sent to your email!");
+        toast.success((parsed && parsed.message) || "Password reset link sent to your email!");
+        // Optionally show reset URL in dev
+        if (parsed && parsed.reset_url) {
+          console.debug("Reset URL:", parsed.reset_url);
+        }
       } else {
-        toast.error(data.message || "Email not found");
+        const msg = parsed && (parsed.message || parsed.error) ? (parsed.message || parsed.error) : text || "Email not found";
+        toast.error(String(msg));
       }
     } catch (err) {
       toast.error("Something went wrong");

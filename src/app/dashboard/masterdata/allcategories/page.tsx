@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { useMemo } from "react";
+import useDebounce from "@/utils/useDebounce";
 import { FaEdit, FaTrash, FaCheck, FaTimes } from "react-icons/fa";
 import toast, { Toaster } from "react-hot-toast";
 import axios from "@/utils/axios";
@@ -15,6 +17,7 @@ type Category = {
 
 export default function AllCategories() {
   const [search, setSearch] = useState("");
+  const debouncedSearch = useDebounce(search, 200);
   const [categories, setCategories] = useState<Category[]>([]);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editName, setEditName] = useState("");
@@ -61,6 +64,14 @@ export default function AllCategories() {
       return toast.error("Category name is required.");
 
     try {
+      // Ensure CSRF cookie is present for stateful requests (Sanctum)
+      try {
+        await fetch("/api/sanctum/csrf-cookie", { credentials: "include" });
+      } catch {
+        // interceptor will also attempt if this fails
+      }
+
+      // Use proxied protected endpoint (Next API -> backend /api/categories)
       const res = await axios.post("/categories", { name: newCategoryName });
       toast.success("Category added!");
       setNewCategoryName("");
@@ -103,6 +114,12 @@ export default function AllCategories() {
     if (!editName.trim()) return toast.error("Name cannot be empty.");
 
     try {
+      // Ensure CSRF cookie
+      try {
+        await fetch("/api/sanctum/csrf-cookie", { credentials: "include" });
+      } catch {}
+
+      // Update via proxied protected endpoint
       await axios.put(`/categories/${id}`, { name: editName });
       toast.success("Updated successfully!");
       setCategories((prev) =>
@@ -136,6 +153,10 @@ export default function AllCategories() {
     if (!confirm("Delete this category?")) return;
 
     try {
+      // Delete via proxied protected endpoint
+      try {
+        await fetch("/api/sanctum/csrf-cookie", { credentials: "include" });
+      } catch {}
       await axios.delete(`/categories/${id}`);
       toast.success("Deleted!");
       setCategories((prev) => prev.filter((cat) => cat.id !== id));

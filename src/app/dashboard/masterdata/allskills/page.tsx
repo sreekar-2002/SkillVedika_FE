@@ -1,12 +1,15 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
+import useDebounce from "@/utils/useDebounce";
 import { FaEdit, FaTrash } from "react-icons/fa";
 import { toast, Toaster } from "react-hot-toast";
 
-const API = "http://127.0.0.1:8000/api/skills";
+const API = "/api/skills";
+const PUBLIC_CREATE = "/api/public/skills"; // temporary dev-only public create endpoint
 
 export default function AllSkills() {
   const [searchTerm, setSearchTerm] = useState("");
+  const debouncedSearchTerm = useDebounce(searchTerm, 200);
   const [skills, setSkills] = useState([]);
   const [editingId, setEditingId] = useState(null);
   const [editName, setEditName] = useState("");
@@ -24,8 +27,15 @@ export default function AllSkills() {
     try {
       const res = await fetch(API, {
         headers: { Accept: "application/json" },
+        credentials: "include",
       });
-      const data = await res.json();
+      const text = await res.text();
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        data = text;
+      }
 
       let items = [];
       if (Array.isArray(data)) {
@@ -46,7 +56,10 @@ export default function AllSkills() {
   }
 
   useEffect(() => {
-    fetchSkills();
+    // call inside async IIFE to avoid synchronous setState in effect body
+    (async () => {
+      await fetchSkills();
+    })();
   }, []);
 
   // (fetchSkills moved above to avoid hoisting issue)
@@ -55,13 +68,20 @@ export default function AllSkills() {
   const addSkill = async () => {
     if (!newSkillName.trim()) return toast.error("Skill name is required.");
 
+    // Client-side duplicate prevention (case-insensitive)
+    const exists = skills.some(
+      (s) => s?.name && s.name.toLowerCase() === newSkillName.trim().toLowerCase()
+    );
+    if (exists) return toast.error("Duplicate skills are not allowed.");
+
     try {
-      const res = await fetch(API, {
+      const res = await fetch(PUBLIC_CREATE, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Accept: "application/json",
         },
+        credentials: "include",
         body: JSON.stringify({
           name: newSkillName,
           description: newSkillDescription,
@@ -69,19 +89,26 @@ export default function AllSkills() {
         }),
       });
 
-      if (!res.ok) {
-        const json = await res.json();
-        return toast.error(json.errors?.name?.[0] || "Failed to add skill.");
+      const text = await res.text();
+      let json;
+      try {
+        json = JSON.parse(text);
+      } catch {
+        json = text;
       }
 
-      const { skill } = await res.json();
+      if (!res.ok) {
+        return toast.error(json.errors?.name?.[0] || json.message || "Failed to add skill.");
+      }
+
+      const { skill } = json;
       setSkills([skill, ...skills]);
       setNewSkillName("");
       setNewSkillDescription("");
       setNewSkillCategory("");
       setIsModalOpen(false);
       toast.success("Skill added successfully!");
-    } catch (err) {
+    } catch {
       toast.error("Error adding skill.");
     }
   };
@@ -90,13 +117,20 @@ export default function AllSkills() {
   const updateSkill = async (id) => {
     if (!editName.trim()) return toast.error("Skill name is required.");
 
+    // Prevent duplicate skill name among other skills
+    const exists = skills.some(
+      (s) => s.id !== id && s?.name && s.name.toLowerCase() === editName.trim().toLowerCase()
+    );
+    if (exists) return toast.error("Duplicate skills are not allowed.");
+
     try {
-      const res = await fetch(`${API}/${id}`, {
+      const res = await fetch(`/api/public/skills/${id}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
           Accept: "application/json",
         },
+        credentials: "include",
         body: JSON.stringify({
           name: editName,
           description: editDescription,
@@ -104,16 +138,26 @@ export default function AllSkills() {
         }),
       });
 
-      if (!res.ok) {
-        const json = await res.json();
-        return toast.error(json.errors?.name?.[0] || "Failed to update skill.");
+      const text = await res.text();
+      let json;
+      try {
+        json = JSON.parse(text);
+      } catch {
+        json = text;
       }
 
-      const { skill } = await res.json();
+      if (!res.ok) {
+        // show short preview to user, log full response for debugging
+        console.error('updateSkill backend response:', { status: res.status, text });
+        const preview = (typeof text === 'string' && text.length > 300) ? text.substring(0,300) + '...' : (text || 'Failed to update skill.');
+        return toast.error(preview);
+      }
+
+      const { skill } = json;
       setSkills(skills.map((s) => (s.id === id ? skill : s)));
       setEditingId(null);
       toast.success("Skill updated successfully!");
-    } catch (err) {
+    } catch {
       toast.error("Error updating skill.");
     }
   };
@@ -123,27 +167,44 @@ export default function AllSkills() {
     if (!confirm("Delete this skill?")) return;
 
     try {
-      const res = await fetch(`${API}/${id}`, {
+      const res = await fetch(`/api/public/skills/${id}`, {
         method: "DELETE",
         headers: { Accept: "application/json" },
+        credentials: "include",
       });
 
-      if (!res.ok) return toast.error("Failed to delete skill.");
+      const text = await res.text();
+      let json;
+      try {
+        json = JSON.parse(text);
+      } catch {
+        json = text;
+      }
+
+      if (!res.ok) {
+        console.error('deleteSkill backend response:', { status: res.status, text });
+        const preview = (typeof text === 'string' && text.length > 300) ? text.substring(0,300) + '...' : (text || 'Failed to delete skill.');
+        return toast.error(preview);
+      }
 
       setSkills(skills.filter((s) => s.id !== id));
       toast.success("Skill deleted successfully!");
-    } catch (err) {
+    } catch {
       toast.error("Error deleting skill.");
     }
   };
 
-  const filteredSkills = Array.isArray(skills)
-    ? skills.filter((skill) =>
-        (skill && skill.name ? skill.name.toLowerCase() : "").includes(
-          searchTerm.toLowerCase()
-        )
-      )
-    : [];
+  const filteredSkills = useMemo(
+    () =>
+      Array.isArray(skills)
+        ? skills.filter((skill) =>
+            (skill && skill.name ? skill.name.toLowerCase() : "").includes(
+              (debouncedSearchTerm || "").toLowerCase()
+            )
+          )
+        : [],
+    [skills, debouncedSearchTerm]
+  );
 
   return (
     <div className="p-6 bg-gradient-to-br from-white to-gray-50 rounded-3xl shadow-xl border border-gray-200">

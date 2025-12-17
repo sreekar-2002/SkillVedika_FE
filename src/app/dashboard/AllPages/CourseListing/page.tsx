@@ -4,8 +4,6 @@ import { useState, useEffect } from "react";
 import toast from "react-hot-toast";
 import { AdminCard, AdminInput } from "../CorporateTraining/components/AdminUI";
 
-const API_URL = "http://127.0.0.1:8000/api";
-
 export default function CourseListingPage() {
   const [isSaving, setIsSaving] = useState(false);
 
@@ -17,9 +15,10 @@ export default function CourseListingPage() {
   useEffect(() => {
     (async () => {
       try {
-        const res = await fetch(`${API_URL}/course-page-content`, {
+        const res = await fetch(`/api/course-page-content`, {
           method: "GET",
           headers: { "Content-Type": "application/json" },
+          credentials: "include",
         });
 
         if (!res.ok) {
@@ -68,10 +67,9 @@ export default function CourseListingPage() {
     };
 
     console.log("Payload:", payload);
-    console.log("API_URL:", API_URL);
 
     try {
-      const url = `${API_URL}/course-page-content/update`;
+      const url = `/api/course-page-content`;
       console.log("Fetching:", url);
 
       const res = await fetch(url, {
@@ -80,6 +78,7 @@ export default function CourseListingPage() {
           "Content-Type": "application/json",
           Accept: "application/json",
         },
+        credentials: "include",
         body: JSON.stringify(payload),
       });
 

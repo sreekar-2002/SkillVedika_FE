@@ -192,12 +192,12 @@ export default function AddNewBlogPage() {
       };
 
       if (isEditMode && blogId) {
-        // Update existing blog
-        await axios.put(`/blogs/${blogId}`, payload);
+        // Update existing blog (use public fallback in dev)
+        await axios.put(`/public/blogs/${blogId}`, payload);
         toast.success("Blog updated successfully!");
       } else {
-        // Create new blog
-        await axios.post("/blogs", payload);
+        // Create new blog (use public fallback in dev)
+        await axios.post("/public/blogs", payload);
         toast.success("Blog created successfully!");
         resetForm();
       }

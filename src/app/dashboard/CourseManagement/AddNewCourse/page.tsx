@@ -44,6 +44,21 @@ export default function AddNewCoursePage() {
   const [status, setStatus] = useState("none");
   const [mode, setMode] = useState("active");
 
+  // All categories for dropdown (id + name)
+  const [allCategories, setAllCategories] = useState<Array<{ id: number; name: string }>>([]);
+
+  const fetchAllCategories = useCallback(async () => {
+    try {
+      const res = await axios.get("/categories");
+      const data = res.data ?? [];
+      // support paginated or { data: [...] } shapes
+      const list = Array.isArray(data) ? data : data?.data ?? [];
+      setAllCategories(list);
+    } catch (e) {
+      console.error("Failed to load categories for dropdown:", e);
+    }
+  }, []);
+
   // Step 2 fields - Dynamic arrays for better UX
   const [subtitle, setSubtitle] = useState("");
 
@@ -99,16 +114,36 @@ export default function AddNewCoursePage() {
   // file input ref
   const fileRef = useRef<HTMLInputElement | null>(null);
 
-  // Resolve image URL: if full URL return as-is, otherwise prepend backend origin
-  function resolveImageUrl(img?: string | null) {
+  // Helper: try multiple keys on an object and return the first non-empty value
+  function pickFirst(obj: any, keys: string[]) {
+    if (!obj) return undefined;
+    for (const k of keys) {
+      const v = obj[k];
+      if (v !== undefined && v !== null && String(v).trim() !== "") return v;
+    }
+    return undefined;
+  }
+
+  // Resolve image URL: accepts string or object (cloudinary-style) and returns a usable URL
+  function resolveImageUrl(img?: any) {
     const fallback = "/default-uploads/default-course.png";
     if (!img) return fallback;
+
+    // If it's an object (e.g. { url, secure_url, path }) prefer common keys
+    if (typeof img === "object") {
+      const candidate = img.secure_url || img.url || img.path || img.file || img.thumbnail || img.src;
+      if (candidate && String(candidate).trim() !== "") img = candidate;
+      else return fallback;
+    }
+
+    // Now img should be a string
+    if (typeof img !== "string") return fallback;
     if (/^https?:\/\//i.test(img)) return img;
     // If the image path does not start with '/', prepend '/storage/'
     const path = img.startsWith("/") ? img : `/storage/${img}`;
     const base = (axios.defaults.baseURL || "").replace(/\/?api\/?$/i, "");
     const url = base + path;
-    console.log("[AddNewCourse] course.image=", img, "resolved=", url);
+    console.debug("[AddNewCourse] course.image=", img, "resolved=", url);
     return url;
   }
 
@@ -123,17 +158,30 @@ export default function AddNewCoursePage() {
       const courseRes = await axios.get(`/courses/${id}`);
       const course = courseRes.data?.data || courseRes.data;
 
-      // Populate Step 1 fields
-      setTitle(course.title || "");
-      setDescription(course.description || "");
-      setPrice(course.price?.toString() || "");
-      setRating(course.rating?.toString() || "");
-      setStudents(course.students?.toString() || "");
-      setCategoryId(course.category_id?.toString() || "");
-      setStatus(course.status || "none");
-      setMode(course.mode || "active");
-      if (course.image) {
-        setImagePreview(resolveImageUrl(course.image)); // normalize relative paths to absolute
+      // Populate Step 1 fields (be tolerant to different backend shapes)
+      console.debug("[AddNewCourse] loadCourseData course:", course);
+      const titleVal = pickFirst(course, ["title", "name", "course_title", "course_name"]);
+      const descVal = pickFirst(course, ["description", "short_description", "details"]);
+      const priceVal = pickFirst(course, ["price", "fees", "cost"]);
+      const ratingVal = pickFirst(course, ["rating", "avg_rating"]);
+      const studentsVal = pickFirst(course, ["students", "enrolled", "student_count"]);
+      const categoryVal = pickFirst(course, ["category_id", "categoryId", "category"]);
+      const statusVal = pickFirst(course, ["status", "course_status"]);
+      const modeVal = pickFirst(course, ["mode", "visibility"]);
+      const imageVal = pickFirst(course, ["image", "banner_image", "image_url", "imageUrl", "thumbnail"]);
+
+      setTitle(titleVal ? String(titleVal) : "");
+      setDescription(descVal ? String(descVal) : "");
+      setPrice(priceVal !== undefined && priceVal !== null ? String(priceVal) : "");
+      setRating(ratingVal !== undefined && ratingVal !== null ? String(ratingVal) : "");
+      setStudents(studentsVal !== undefined && studentsVal !== null ? String(studentsVal) : "");
+      setCategoryId(categoryVal !== undefined && categoryVal !== null ? String(categoryVal) : "");
+      setStatus(statusVal ? String(statusVal) : "none");
+      setMode(modeVal ? String(modeVal) : "active");
+      if (imageVal) {
+        setImagePreview(resolveImageUrl(imageVal)); // normalize relative paths to absolute
+      } else {
+        setImagePreview(null);
       }
 
       // Fetch course-details data
@@ -245,6 +293,8 @@ export default function AddNewCoursePage() {
       setIsEditMode(true);
       loadCourseData(id);
     }
+    // Always fetch categories for the dropdown on mount
+    void fetchAllCategories();
   }, [searchParams, loadCourseData]);
 
   // Warn user if they try to leave before completing Step 2
@@ -573,11 +623,21 @@ export default function AddNewCoursePage() {
                     value={students}
                     onChange={setStudents}
                   />
-                  <AdminInput
-                    label="Category ID"
-                    value={categoryId}
-                    onChange={setCategoryId}
-                  />
+                                <div>
+                                  <label className="block text-gray-600 font-semibold mb-2">Category</label>
+                                  <select
+                                    className="w-full border rounded-lg px-3 py-2"
+                                    value={categoryId}
+                                    onChange={(e) => setCategoryId(e.target.value)}
+                                  >
+                                    <option value="">-- Select category --</option>
+                                    {allCategories.map((c) => (
+                                      <option key={c.id} value={String(c.id)}>
+                                        {c.name} ({c.id})
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

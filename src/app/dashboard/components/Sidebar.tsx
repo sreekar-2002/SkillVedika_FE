@@ -115,14 +115,22 @@ export default function Sidebar({ isOpen }: SidebarProps) {
           name: "Job Assistance Program",
           href: "/dashboard/CommonSection/JobAssistanceProgram",
         },
-        // {
-        //   name: "For Corporate",
-        //   href: "/dashboard/CommonSection/ForCorporate",
-        // },
+        {
+          name: "Placement and Reserve",
+          href: "/dashboard/CommonSection/Placement&Reserve",
+        },
         {
           name: "Live Free Demo",
           href: "/dashboard/CommonSection/LiveFreeDemo",
         },
+        // {
+        //   name: "Header Settings",
+        //   href: "/dashboard/CommonSection/HeaderSettings",
+        // },
+        // {
+        //   name: "Footer Settings",
+        //   href: "/dashboard/CommonSection/FooterSettings",
+        // },
         // {
         //   name: "Job Program Support",
         //   href: "/dashboard/CommonSection/JobProgramSupport",
@@ -135,7 +143,20 @@ export default function Sidebar({ isOpen }: SidebarProps) {
       icon: <FaTags />,
       href: "/dashboard/SEOManagement",
     },
-    { name: "Settings", icon: <MdSettings />, href: "/dashboard/Settings" },
+    {
+      name: "Settings",
+      icon: <MdSettings />,
+      subMenu: [
+        {
+          name: "Header Settings",
+          href: "/dashboard/CommonSection/HeaderSettings",
+        },
+        {
+          name: "Footer Settings",
+          href: "/dashboard/CommonSection/FooterSettings",
+        },
+      ],
+    },
   ];
 
   // ===== AUTO OPEN THE PARENT MENU BASED ON CURRENT URL =====

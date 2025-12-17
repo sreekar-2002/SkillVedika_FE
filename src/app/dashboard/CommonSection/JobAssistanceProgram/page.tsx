@@ -1,7 +1,9 @@
 "use client";
 
 // import { useState, ChangeEvent } from "react";
-import{ ReactNode } from "react";
+import { useState, useEffect, ReactNode } from "react";
+import axios from "@/utils/axios";
+import toast from "react-hot-toast";
 // import Image from "next/image";
 // import { FiUploadCloud } from "react-icons/fi";
 
@@ -23,6 +25,26 @@ function InnerCard({ children }: { children: ReactNode }) {
   );
 }
 
+// Default program list kept at module scope (not shown by admin unless backend sends data)
+const DEFAULT_PROGRAM_LIST = [
+  { id: 1, title: 'Course Completion', desc: 'Get hands on training from experts' },
+  { id: 2, title: 'Quizzes', desc: 'Know where you stand in mastering' },
+  { id: 3, title: 'Mock Interview', desc: 'Experience real time interviews with SMEs' },
+  { id: 4, title: 'Skillvedika Rating', desc: 'Understand your learning performance through SV score' },
+  { id: 5, title: 'Resume Building', desc: 'Build your portfolio with our experts assistance' },
+  { id: 6, title: 'Marketing Profile', desc: 'Take advantage of Skill Vedika marketing your skills' },
+];
+
+// normalize to ensure controlled inputs always receive strings
+function normalizePoints(points: any[] | undefined) {
+  if (!Array.isArray(points)) return DEFAULT_PROGRAM_LIST.map((p) => ({ ...p }));
+  return points.map((p: any, i: number) => ({
+    id: p.id ?? i + 1,
+    title: (p.title ?? p.name ?? (typeof p === 'string' ? p : '')) || '',
+    desc: (p.desc ?? p.description ?? p.text ?? '') || '',
+  }));
+}
+
 export default function JobAssistanceProgramPage() {
   // const [preview, setPreview] = useState<any>({});
 
@@ -36,34 +58,62 @@ export default function JobAssistanceProgramPage() {
   //   }
   // };
 
-  const programList = [
-    {
-      id: 1,
-      title: "Course Completion",
-      desc: "Get hands on training from experts",
-    },
-    { id: 2, title: "Quizzes", desc: "Know where you stand in mastering" },
-    {
-      id: 3,
-      title: "Mock Interview",
-      desc: "Experience real time interviews with SMEs",
-    },
-    {
-      id: 4,
-      title: "Skillvedika Rating",
-      desc: "Understand your learning performance through SV score",
-    },
-    {
-      id: 5,
-      title: "Resume Building",
-      desc: "Build your portfolio with our experts assistance",
-    },
-    {
-      id: 6,
-      title: "Marketing Profile",
-      desc: "Take advantage of Skill Vedika marketing your skills",
-    },
-  ];
+  const [saving, setSaving] = useState(false);
+  const [recordId, setRecordId] = useState<number | null>(null);
+  // start empty — do not show default data on initial load
+  const [programs, setPrograms] = useState<any[]>([]);
+  const [heroTitle, setHeroTitle] = useState<string>("");
+  const [heroSubtitle, setHeroSubtitle] = useState<string>("");
+
+  useEffect(() => {
+    let mounted = true;
+    const load = async () => {
+      try {
+        const res = await axios.get('/course-details/job-assistance');
+        const payload = res.data?.data;
+        if (!payload) return;
+        if (!mounted) return;
+        setRecordId(payload.id ?? null);
+        // title can be stored as object {text:..} or plain
+        if (payload.title) {
+          if (typeof payload.title === 'string') setHeroTitle(payload.title);
+          else if (typeof payload.title === 'object') setHeroTitle(payload.title.text ?? JSON.stringify(payload.title));
+        }
+        if (payload.subtitle) setHeroSubtitle(payload.subtitle ?? '');
+        if (payload.points) setPrograms(normalizePoints(payload.points));
+      } catch (e) {
+        console.debug('Could not load job assistance content', e);
+      }
+    };
+    void load();
+    return () => { mounted = false; };
+  }, []);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const payload = {
+        title: heroTitle,
+        subtitle: heroSubtitle,
+        points: programs,
+      };
+
+      if (recordId) {
+        const res = await axios.put(`/course-details/job-assistance/${recordId}`, payload);
+        toast.success('Updated Successfully');
+        if (res.data?.data?.id) setRecordId(res.data.data.id);
+      } else {
+        const res = await axios.post(`/course-details/job-assistance`, payload);
+        toast.success('Saved successfully');
+        if (res.data?.data?.id) setRecordId(res.data.data.id);
+      }
+    } catch (err: any) {
+      console.error('save error', err);
+      toast.error(err?.response?.data?.message ?? 'Could not save');
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <PageCard>
@@ -88,7 +138,8 @@ export default function JobAssistanceProgramPage() {
             </label>
             <input
               type="text"
-              defaultValue="Job Assistance <span>Program</span>"
+              value={heroTitle}
+              onChange={(e) => setHeroTitle(e.target.value)}
               className="w-full border border-gray-300 rounded-lg p-3 shadow-sm mb-6"
             />
 
@@ -97,7 +148,8 @@ export default function JobAssistanceProgramPage() {
             </label>
             <textarea
               rows={4}
-              defaultValue="We take pride in being part of 5 lakh plus career transitions worldwide"
+              value={heroSubtitle}
+              onChange={(e) => setHeroSubtitle(e.target.value)}
               className="w-full border border-gray-300 rounded-lg p-3 shadow-sm mb-6"
             />
 
@@ -108,7 +160,7 @@ export default function JobAssistanceProgramPage() {
         {/*              PROGRAM LIST CARDS                   */}
         {/* ================================================= */}
 
-        {programList.map((p) => (
+        {programs.map((p, idx) => (
           <PageCard key={p.id}>
             <h2 className="text-xl font-semibold mb-4 text-gray-700">
               Job Assistance Program {p.id}
@@ -120,7 +172,14 @@ export default function JobAssistanceProgramPage() {
               </label>
               <input
                 type="text"
-                defaultValue={p.title}
+                value={p.title ?? p.name ?? ''}
+                onChange={(e) =>
+                  setPrograms((prev) => {
+                    const next = [...prev];
+                    next[idx] = { ...next[idx], title: e.target.value };
+                    return next;
+                  })
+                }
                 className="w-full border border-gray-300 rounded-lg p-3 shadow-sm mb-6"
               />
 
@@ -129,46 +188,28 @@ export default function JobAssistanceProgramPage() {
               </label>
               <textarea
                 rows={3}
-                defaultValue={p.desc}
+                value={p.desc ?? p.description ?? ''}
+                onChange={(e) =>
+                  setPrograms((prev) => {
+                    const next = [...prev];
+                    next[idx] = { ...next[idx], desc: e.target.value };
+                    return next;
+                  })
+                }
                 className="w-full border border-gray-300 rounded-lg p-3 shadow-sm mb-6"
               />
-
-              {/* <InnerCard>
-                <label className="font-semibold block mb-3 text-gray-600">
-                  Select Icon Image
-                </label>
-
-                <div className="flex items-center gap-6">
-                  <label className="flex items-center gap-2 bg-blue-800 text-white px-5 py-3 rounded-lg cursor-pointer hover:bg-blue-700 transition">
-                    <FiUploadCloud size={20} />
-                    Choose Image
-                    <input
-                      type="file"
-                      className="hidden"
-                      accept="image/*"
-                      onChange={(e) => handleUpload(e, `program_${p.id}`)}
-                    />
-                  </label>
-
-                  {preview[`program_${p.id}`] && (
-                    <Image
-                      src={preview[`program_${p.id}`]}
-                      width={120}
-                      height={120}
-                      alt="preview"
-                      className="rounded-lg border shadow object-cover"
-                    />
-                  )}
-                </div>
-              </InnerCard> */}
             </InnerCard>
           </PageCard>
         ))}
 
         {/* SUBMIT BUTTON – RIGHT SIDE */}
         <div className="flex justify-end mt-8">
-          <button className="bg-blue-800 text-white px-10 py-3 rounded-lg shadow hover:bg-blue-700 transition font-semibold">
-            Submit
+          <button
+            onClick={() => void handleSave()}
+            className="bg-blue-800 text-white px-10 py-3 rounded-lg shadow hover:bg-blue-700 transition font-semibold"
+            disabled={saving}
+          >
+            {saving ? 'Saving...' : 'Submit'}
           </button>
         </div>
       </div>

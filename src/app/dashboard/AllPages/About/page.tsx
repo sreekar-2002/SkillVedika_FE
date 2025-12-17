@@ -9,7 +9,8 @@ import {
 } from "../CorporateTraining/components/AdminUI";
 import { Toaster, toast } from "react-hot-toast";
 
-const DEFAULT_IMAGE = "/default-uploads/placeholder.png";
+// Use an existing default image from public/default-uploads to avoid 404s
+const DEFAULT_IMAGE = "/default-uploads/Skill-vedika-Logo.jpg";
 
 export default function AboutPage() {
   const [heroHeading, setHeroHeading] = useState("");

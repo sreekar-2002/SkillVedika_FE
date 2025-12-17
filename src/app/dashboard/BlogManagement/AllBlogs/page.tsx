@@ -40,7 +40,16 @@ export default function AllBlogs() {
     try {
       setLoading(true);
       const response = await axios.get("/blogs");
-      setBlogs(response.data || []);
+      // normalize response shapes: support array or { data: [...] }
+      const raw = response.data ?? [];
+      const list = Array.isArray(raw) ? raw : raw.data ?? [];
+      // Ensure required fields are present to avoid runtime crashes
+      const safe = (list || []).map((b: any) => ({
+        ...b,
+        blog_name: b.blog_name || b.title || b.name || "",
+        banner_image: b.banner_image ?? b.image ?? b.thumbnail ?? null,
+      }));
+      setBlogs(safe);
     } catch (error) {
       console.error("Failed to fetch blogs:", error);
       toast.error("Failed to load blogs");
@@ -54,8 +63,16 @@ export default function AllBlogs() {
   }, [fetchBlogs]);
 
   /* -------------------- RESOLVE IMAGE URL -------------------- */
-  const resolveImageUrl = (imageUrl: string): string => {
-    if (!imageUrl) return "/placeholder.png";
+  const resolveImageUrl = (imageUrl: any): string => {
+    const fallback = "/placeholder.png";
+    if (!imageUrl) return fallback;
+    // If object, prefer common keys
+    if (typeof imageUrl === "object") {
+      const candidate = imageUrl.secure_url || imageUrl.url || imageUrl.path || imageUrl.src || imageUrl.thumbnail;
+      if (!candidate) return fallback;
+      imageUrl = candidate;
+    }
+    if (typeof imageUrl !== "string") return fallback;
     if (imageUrl.startsWith("http://") || imageUrl.startsWith("https://")) {
       return imageUrl;
     }
@@ -120,11 +137,12 @@ export default function AllBlogs() {
   };
 
   /* -------------------- FILTER BLOGS -------------------- */
-  const filtered = blogs.filter(
-    (blog) =>
-      blog.blog_name.toLowerCase().includes(search.toLowerCase()) ||
-      blog.blog_id.toString().includes(search)
-  );
+  const filtered = blogs.filter((blog) => {
+    const name = (blog.blog_name || "").toString().toLowerCase();
+    const idStr = (blog.blog_id ?? "").toString();
+    const q = search.toLowerCase();
+    return name.includes(q) || idStr.includes(search);
+  });
 
   return (
     <div className="p-8 bg-white rounded-3xl shadow-md border border-gray-200">
