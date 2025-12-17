@@ -6,6 +6,7 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
+
   // Dev-time proxy: forward any /api requests to the local Laravel backend.
   // This avoids CORS and lets the frontend call `/api/...` as a simple relative path.
   async rewrites() {
@@ -16,6 +17,7 @@ const nextConfig = {
       },
     ];
   },
+
 }
 
 export default nextConfig

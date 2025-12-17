@@ -39,16 +39,13 @@ export default function Header({
 
   // Load avatar from localStorage and listen for profile updates (custom
   // event and storage events so changes reflect across tabs/windows).
-  // It's safe to set state here once on mount (hydration) — disable the
-  // lint rule that warns about synchronous setState in effects for this case.
-  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => {
     if (typeof window === "undefined") return;
 
     // hydrate from localStorage on mount
     try {
       const stored = localStorage.getItem("admin_avatar");
-      if (stored) setTimeout(() => setAvatar(stored), 0);
+      if (stored) setAvatar(stored);
     } catch {}
 
     // handler for custom event dispatched by Profile page

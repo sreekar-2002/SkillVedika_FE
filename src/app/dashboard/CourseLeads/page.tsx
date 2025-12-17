@@ -1,5 +1,6 @@
 "use client";
 
+
 import {
   useCallback,
   useEffect,
@@ -7,6 +8,9 @@ import {
   useState,
   ReactNode,
 } from "react";
+
+import { useCallback, useEffect, useMemo, useState, ReactNode } from "react";
+
 import axios from "@/utils/axios";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
@@ -146,12 +150,15 @@ export default function CourseLeads(): JSX.Element {
         if (dateFrom) params.date_from = dateFrom;
         if (dateTo) params.date_to = dateTo;
 
+
         // Debug log: outgoing params
         console.debug("[CourseLeads] fetchLeads request params:", params);
+
         const res = await axios.get("/leads", {
           params,
           headers: { Accept: "application/json" },
         });
+
 
         console.debug("[CourseLeads] fetchLeads response status:", res.status);
 
@@ -220,6 +227,26 @@ export default function CourseLeads(): JSX.Element {
                 return [
                   r.course.name ?? r.course.title ?? r.course.course_name,
                 ].filter(Boolean);
+
+        const body = res.data;
+        const data = Array.isArray(body.data) ? body.data : [];
+
+        const normalized: Lead[] = data.map((r: any) => {
+          const contactedCandidate =
+            r.contacted_on ?? r.created_at ?? r.createdAt ?? r.created_at;
+          // Normalize courses to array and course to joined string
+          const coursesArr: string[] = (() => {
+            try {
+              if (Array.isArray(r.courses) && r.courses.length) {
+                return r.courses.map((c: any) => (typeof c === "string" ? c : c?.name || c?.title || String(c))).filter(Boolean);
+              }
+              if (Array.isArray(r.course) && r.course.length) {
+                return r.course.map((c: any) => (typeof c === "string" ? c : c?.name || c?.title || String(c))).filter(Boolean);
+              }
+              if (typeof r.course === "string") return [r.course];
+              if (r.course && typeof r.course === "object") {
+                return [r.course.name ?? r.course.title ?? r.course.course_name].filter(Boolean);
+
               }
               if (r.course_name) return [r.course_name];
               return [];
@@ -227,6 +254,7 @@ export default function CourseLeads(): JSX.Element {
               return [];
             }
           })();
+
 
           // prefer mapped array (multiple courses) otherwise fall back to course name/title or mapped id
           const joinedCourse = coursesArr.length
@@ -236,6 +264,9 @@ export default function CourseLeads(): JSX.Element {
             ? courseMap[String(r.course)] ?? String(r.course)
             : r.course_name ?? r.course ?? r.title ?? "";
 
+          const joinedCourse = (coursesArr.length ? coursesArr.join(", ") : (r.course_name ?? r.course ?? ""));
+
+
           return {
             id: r.id,
             name: r.name,
@@ -244,6 +275,7 @@ export default function CourseLeads(): JSX.Element {
             courses: coursesArr,
             course: joinedCourse,
             admin_notes: r.admin_notes ?? r.adminNotes ?? "",
+
             contactedOn: contactedCandidate
               ? new Date(contactedCandidate).toLocaleString()
               : "—",
@@ -280,6 +312,11 @@ export default function CourseLeads(): JSX.Element {
 
               return "";
             })(),
+
+            contactedOn: contactedCandidate ? new Date(contactedCandidate).toLocaleString() : "—",
+            status: r.status ?? "New",
+            leadSource: r.lead_source ?? r.source ?? r.leadSource ?? "",
+
             message: r.message ?? "",
             created_at: r.created_at ?? r.createdAt,
           };
@@ -297,6 +334,7 @@ export default function CourseLeads(): JSX.Element {
             Math.max(1, Math.ceil((body.total ?? normalized.length) / pageSize))
         );
 
+
         // do not modify course list here; course mapping comes from /courses endpoint
         // also expose server pagination meta for debugging
         console.debug(
@@ -311,10 +349,26 @@ export default function CourseLeads(): JSX.Element {
         setError(
           status ? `Failed to load leads: ${status}` : "Failed to load leads"
         );
+
+        // merge courses seen this page into allCourses (avoid loops)
+        setAllCourses((prev) => {
+          const s = new Set(prev);
+          normalized.forEach((l) => {
+            if (l.course) s.add(l.course);
+            if (l.courses && l.courses.length) l.courses.forEach((c) => s.add(c));
+          });
+          return Array.from(s).sort();
+        });
+      } catch (err: any) {
+        console.error("Failed to load leads", err);
+        const status = err?.response?.status;
+        setError(status ? `Failed to load leads: ${status}` : "Failed to load leads");
+
       } finally {
         setLoading(false);
       }
     },
+
     [
       pageSize,
       debouncedSearch,
@@ -329,6 +383,12 @@ export default function CourseLeads(): JSX.Element {
   );
 
   // Fetch course metadata (id -> title) once on mount so we can map incoming lead course ids to names
+
+    [pageSize, debouncedSearch, sortBy, sortDir, statusFilter, courseFilter, dateFrom, dateTo]
+  );
+
+  // initial fetch & when page changes
+
   useEffect(() => {
     let mounted = true;
     const loadCourses = async () => {
@@ -360,6 +420,7 @@ export default function CourseLeads(): JSX.Element {
       }
     };
 
+
     void loadCourses();
     return () => {
       mounted = false;
@@ -373,6 +434,10 @@ export default function CourseLeads(): JSX.Element {
 
   // debounce searchTerm -> debouncedSearch
   useEffect(() => {
+
+  // debounce searchTerm -> debouncedSearch
+  useEffect(() => {
+
     const t = setTimeout(() => setDebouncedSearch(searchTerm.trim()), 450);
     return () => clearTimeout(t);
   }, [searchTerm]);
@@ -381,6 +446,12 @@ export default function CourseLeads(): JSX.Element {
   useEffect(() => {
     setCurrentPage(1);
   }, [debouncedSearch, statusFilter, courseFilter, dateFrom, dateTo]);
+
+  // sync adminNotes when selectedLead changes
+  useEffect(() => {
+    if (selectedLead) setAdminNotes(selectedLead.admin_notes ?? "");
+    else setAdminNotes("");
+  }, [selectedLead]);
 
   // sync adminNotes when selectedLead changes
   useEffect(() => {
@@ -410,35 +481,52 @@ export default function CourseLeads(): JSX.Element {
         break;
       }
     }
+
     return token
       ? { withCredentials: true, headers: { Authorization: `Bearer ${token}` } }
       : { withCredentials: true };
+
+    return token ? { withCredentials: true, headers: { Authorization: `Bearer ${token}` } } : { withCredentials: true };
+
   }, []);
 
   const updateStatus = useCallback(
     async (status: string) => {
+
       if (!selectedLead) return toast.error("No lead selected");
+
+      if (!selectedLead) return;
+
       try {
         await ensureCsrf();
         const cfg = authCfg();
         await axios.put(`/leads/${selectedLead.id}/status`, { status }, cfg);
+
         setLeads((prev) =>
           prev.map((l) => (l.id === selectedLead.id ? { ...l, status } : l))
         );
+
+        setLeads((prev) => prev.map((l) => (l.id === selectedLead.id ? { ...l, status } : l)));
+
         setSelectedLead((s) => (s ? { ...s, status } : s));
         toast.success("Status updated");
       } catch (err: any) {
         console.error("updateStatus error", err);
+
         const statusCode = err?.response?.status;
         const serverMsg =
           err?.response?.data?.message ||
           JSON.stringify(err?.response?.data || err.message);
         if (statusCode === 401) {
+
+        if (err?.response?.status === 401) {
+
           toast.error("Unauthenticated. Redirecting to login...");
           try {
             localStorage.removeItem("admin_token");
           } catch {}
           router.push("/");
+
         } else if (statusCode === 404) {
           toast.error(`Not found (404): ${serverMsg}`);
         } else if (statusCode === 422) {
@@ -447,12 +535,16 @@ export default function CourseLeads(): JSX.Element {
           toast.error(
             "Failed to update status: " + (err?.message || serverMsg)
           );
+
+        } else {
+
           setError("Failed to update status");
         }
       }
     },
     [selectedLead, ensureCsrf, authCfg, router]
   );
+
 
   // Debug helper: log request headers/cookies/auth state from backend debug endpoint
   const debugRequest = useCallback(async () => {
@@ -471,6 +563,7 @@ export default function CourseLeads(): JSX.Element {
     try {
       await ensureCsrf();
       const cfg = authCfg();
+
 
       // Send admin_notes to the protected updateStatus endpoint which accepts admin_notes as well.
       const payload: Record<string, unknown> = { admin_notes: adminNotes };
@@ -544,6 +637,19 @@ export default function CourseLeads(): JSX.Element {
     return () => clearTimeout(timer);
   }, [adminNotes, selectedLead, saveAdminNotes]);
 
+
+      await axios.put(`/leads/${selectedLead.id}/status`, { admin_notes: adminNotes }, cfg);
+      setLeads((prev) => prev.map((l) => (l.id === selectedLead.id ? { ...l, admin_notes: adminNotes } : l)));
+      setSelectedLead((s) => (s ? { ...s, admin_notes: adminNotes } : s));
+      toast.success("Notes saved");
+    } catch (err: any) {
+      console.error("saveAdminNotes error", err);
+      if (err?.response?.status === 401) toast.error("Unauthenticated. Please login.");
+      else toast.error("Failed to save notes");
+    }
+  }, [selectedLead, adminNotes, ensureCsrf, authCfg]);
+
+
   const deleteLead = useCallback(
     async (id: number) => {
       try {
@@ -554,8 +660,12 @@ export default function CourseLeads(): JSX.Element {
         toast.success("Deleted");
       } catch (err: any) {
         console.error("deleteLead error", err);
+
         if (err?.response?.status === 401)
           toast.error("Unauthenticated. Please login.");
+
+        if (err?.response?.status === 401) toast.error("Unauthenticated. Please login.");
+
         else setError("Failed to delete lead");
       }
     },
@@ -572,8 +682,12 @@ export default function CourseLeads(): JSX.Element {
       toast.success("Deleted selected");
     } catch (err: any) {
       console.error("deleteSelected error", err);
+
       if (err?.response?.status === 401)
         toast.error("Unauthenticated. Please login.");
+
+      if (err?.response?.status === 401) toast.error("Unauthenticated. Please login.");
+
       else setError("Failed to delete selected leads");
     }
   }, [selectedIds, authCfg]);
@@ -635,14 +749,19 @@ export default function CourseLeads(): JSX.Element {
      Selection helpers
   --------------------------- */
   const toggleSelect = useCallback((id: number) => {
+
     setSelectedIds((prev) =>
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
     );
+
+    setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+
   }, []);
 
   const toggleSelectAllVisible = useCallback(() => {
     const visibleIds = leads.map((l) => l.id);
     const allSelected = visibleIds.every((id) => selectedIds.includes(id));
+
     if (allSelected)
       setSelectedIds((prev) => prev.filter((id) => !visibleIds.includes(id)));
     else
@@ -652,6 +771,11 @@ export default function CourseLeads(): JSX.Element {
   const gotoPage = useCallback((page: number) => {
     setCurrentPage(page);
   }, []);
+
+    if (allSelected) setSelectedIds((prev) => prev.filter((id) => !visibleIds.includes(id)));
+    else setSelectedIds((prev) => Array.from(new Set([...prev, ...visibleIds])));
+  }, [leads, selectedIds]);
+
 
   /* ---------------------------
      Pagination helper
@@ -696,6 +820,7 @@ export default function CourseLeads(): JSX.Element {
         <div className="mb-6">
           <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
             <div>
+
               <h1
                 id="page-title"
                 className="text-3xl font-semibold text-slate-900"
@@ -705,6 +830,10 @@ export default function CourseLeads(): JSX.Element {
               <p className="text-sm text-slate-500 mt-1">
                 Manage leads — filter, export and follow up quickly.
               </p>
+
+              <h1 id="page-title" className="text-3xl font-semibold text-slate-900">Course Leads</h1>
+              <p className="text-sm text-slate-500 mt-1">Manage leads — filter, export and follow up quickly.</p>
+
             </div>
 
             <div className="flex flex-col sm:flex-row gap-3 items-stretch">
@@ -747,10 +876,7 @@ export default function CourseLeads(): JSX.Element {
           <div className="mt-4 border-t border-slate-100 pt-4">
             <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-7 gap-3 items-end">
               <div className="flex flex-col">
-                <label
-                  htmlFor="statusFilter"
-                  className="text-xs font-medium text-slate-600 mb-1"
-                >
+                <label htmlFor="statusFilter" className="text-xs font-medium text-slate-600 mb-1">
                   Status
                 </label>
                 <select
@@ -768,11 +894,8 @@ export default function CourseLeads(): JSX.Element {
               </div>
 
               <div className="flex flex-col">
-                <label
-                  htmlFor="courseFilter"
-                  className="text-xs font-medium text-slate-600 mb-1"
-                >
-                  Courses
+                <label htmlFor="courseFilter" className="text-xs font-medium text-slate-600 mb-1">
+                  Course
                 </label>
                 <select
                   id="courseFilter"
@@ -783,45 +906,21 @@ export default function CourseLeads(): JSX.Element {
                 >
                   <option value="">All Courses</option>
                   {allCourses.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.title}
+                    <option key={c} value={c}>
+                      {c}
                     </option>
                   ))}
                 </select>
               </div>
 
               <div className="flex flex-col">
-                <label
-                  htmlFor="dateFrom"
-                  className="text-xs font-medium text-slate-600 mb-1"
-                >
-                  From
-                </label>
-                <input
-                  id="dateFrom"
-                  aria-label="Filter from date"
-                  type="date"
-                  value={dateFrom}
-                  onChange={(e) => setDateFrom(e.target.value)}
-                  className="px-3 py-2 rounded-xl bg-white border border-slate-200 text-sm focus:outline-none"
-                />
+                <label htmlFor="dateFrom" className="text-xs font-medium text-slate-600 mb-1">From</label>
+                <input id="dateFrom" aria-label="Filter from date" type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="px-3 py-2 rounded-xl bg-white border border-slate-200 text-sm focus:outline-none" />
               </div>
 
               <div className="flex flex-col">
-                <label
-                  htmlFor="dateTo"
-                  className="text-xs font-medium text-slate-600 mb-1"
-                >
-                  To
-                </label>
-                <input
-                  id="dateTo"
-                  aria-label="Filter to date"
-                  type="date"
-                  value={dateTo}
-                  onChange={(e) => setDateTo(e.target.value)}
-                  className="px-3 py-2 rounded-xl bg-white border border-slate-200 text-sm focus:outline-none"
-                />
+                <label htmlFor="dateTo" className="text-xs font-medium text-slate-600 mb-1">To</label>
+                <input id="dateTo" aria-label="Filter to date" type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="px-3 py-2 rounded-xl bg-white border border-slate-200 text-sm focus:outline-none" />
               </div>
 
               <div className="flex items-end">
@@ -836,12 +935,6 @@ export default function CourseLeads(): JSX.Element {
                     setSortDir("desc");
                     setPageSize(20);
                     setSelectedIds([]);
-                    // trigger immediate refresh to show cleared results
-                    try {
-                      gotoPage(1);
-                    } catch {
-                      /* ignore */
-                    }
                   }}
                   className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 text-sm hover:shadow-sm"
                 >
@@ -851,9 +944,7 @@ export default function CourseLeads(): JSX.Element {
 
               <div className="col-span-2 flex items-end justify-end gap-2">
                 <div className="flex items-center gap-2">
-                  <label htmlFor="sortBy" className="text-xs text-slate-600">
-                    Sort
-                  </label>
+                  <label htmlFor="sortBy" className="text-xs text-slate-600">Sort</label>
                   <select
                     id="sortBy"
                     value={`${sortBy}:${sortDir}`}
@@ -873,22 +964,14 @@ export default function CourseLeads(): JSX.Element {
                     <option value="course:desc">Course Z → A</option>
                     <option value="status:asc">Status A → Z</option>
                     <option value="status:desc">Status Z → A</option>
-                    <option value="contacted_on:desc">Contacted Newest</option>
-                    <option value="contacted_on:asc">Contacted Oldest</option>
+                    <option value="created_at:desc">Contacted Newest</option>
+                    <option value="created_at:asc">Contacted Oldest</option>
                   </select>
                 </div>
 
                 <div className="flex items-center gap-2">
-                  <label htmlFor="pageSize" className="text-xs text-slate-600">
-                    Per page
-                  </label>
-                  <select
-                    id="pageSize"
-                    value={pageSize}
-                    onChange={(e) => setPageSize(Number(e.target.value))}
-                    className="px-3 py-2 rounded-xl bg-white border border-slate-200 text-sm focus:outline-none"
-                    aria-label="Leads per page"
-                  >
+                  <label htmlFor="pageSize" className="text-xs text-slate-600">Per page</label>
+                  <select id="pageSize" value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))} className="px-3 py-2 rounded-xl bg-white border border-slate-200 text-sm focus:outline-none" aria-label="Leads per page">
                     <option value={10}>10</option>
                     <option value={20}>20</option>
                     <option value={50}>50</option>
@@ -903,51 +986,20 @@ export default function CourseLeads(): JSX.Element {
         {/* Table */}
         <div className="mt-6 bg-white rounded-2xl shadow-sm overflow-hidden border border-slate-100">
           <div className="overflow-x-auto">
-            <table
-              className="min-w-full"
-              role="table"
-              aria-label="Course leads table"
-            >
+            <table className="min-w-full" role="table" aria-label="Course leads table">
               <thead className="hidden md:table-header-group">
                 <tr className="bg-white">
                   <th className="py-3 px-4 text-left text-slate-500 text-sm">
-                    <input
-                      type="checkbox"
-                      aria-label="Select all visible leads"
-                      checked={
-                        visibleLeads.length > 0 &&
-                        visibleLeads.every((l) => selectedIds.includes(l.id))
-                      }
-                      onChange={toggleSelectAllVisible}
-                    />
+                    <input type="checkbox" aria-label="Select all visible leads" checked={visibleLeads.length > 0 && visibleLeads.every((l) => selectedIds.includes(l.id))} onChange={toggleSelectAllVisible} />
                   </th>
-                  <th className="py-3 px-4 text-left text-slate-500 text-sm">
-                    ID
-                  </th>
-                  <th className="py-3 px-4 text-left text-slate-500 text-sm">
-                    Name
-                  </th>
-                  <th className="py-3 px-4 text-left text-slate-500 text-sm">
-                    Email
-                  </th>
-                  <th className="py-3 px-4 text-left text-slate-500 text-sm">
-                    Phone
-                  </th>
-                  <th className="py-3 px-4 text-left text-slate-500 text-sm">
-                    Contacted On
-                  </th>
-                  <th className="py-3 px-4 text-left text-slate-500 text-sm">
-                    Course
-                  </th>
-                  <th className="py-3 px-4 text-left text-slate-500 text-sm">
-                    Status
-                  </th>
-                  <th className="py-3 px-4 text-left text-slate-500 text-sm">
-                    Lead Source
-                  </th>
-                  <th className="py-3 px-4 text-center text-slate-500 text-sm">
-                    Actions
-                  </th>
+                  <th className="py-3 px-4 text-left text-slate-500 text-sm">ID</th>
+                  <th className="py-3 px-4 text-left text-slate-500 text-sm">Name</th>
+                  <th className="py-3 px-4 text-left text-slate-500 text-sm">Email</th>
+                  <th className="py-3 px-4 text-left text-slate-500 text-sm">Phone</th>
+                  <th className="py-3 px-4 text-left text-slate-500 text-sm">Course</th>
+                  <th className="py-3 px-4 text-left text-slate-500 text-sm">Status</th>
+                  <th className="py-3 px-4 text-left text-slate-500 text-sm">Lead Source</th>
+                  <th className="py-3 px-4 text-center text-slate-500 text-sm">Actions</th>
                 </tr>
               </thead>
 
@@ -955,131 +1007,55 @@ export default function CourseLeads(): JSX.Element {
                 {loading ? (
                   Array.from({ length: Math.min(pageSize, 6) }).map((_, i) => (
                     <tr key={i} className="border-b border-slate-100">
-                      <td className="py-4 px-4">
-                        <div className="h-3 w-3 bg-slate-200 rounded" />
-                      </td>
-                      <td className="py-4 px-4">
-                        <div className="h-3 w-8 bg-slate-200 rounded" />
-                      </td>
-                      <td className="py-4 px-4">
-                        <div className="h-3 w-28 bg-slate-200 rounded" />
-                      </td>
-                      <td className="py-4 px-4">
-                        <div className="h-3 w-32 bg-slate-200 rounded" />
-                      </td>
-                      <td className="py-4 px-4">
-                        <div className="h-3 w-20 bg-slate-200 rounded" />
-                      </td>
-                      <td className="py-4 px-4">
-                        <div className="h-3 w-24 bg-slate-200 rounded" />
-                      </td>
-                      <td className="py-4 px-4">
-                        <div className="h-3 w-24 bg-slate-200 rounded" />
-                      </td>
-                      <td className="py-4 px-4">
-                        <div className="h-3 w-24 bg-slate-200 rounded" />
-                      </td>
-                      <td className="py-4 px-4 text-center">
-                        <div className="h-8 w-24 bg-slate-200 rounded" />
-                      </td>
+                      <td className="py-4 px-4"><div className="h-3 w-3 bg-slate-200 rounded" /></td>
+                      <td className="py-4 px-4"><div className="h-3 w-8 bg-slate-200 rounded" /></td>
+                      <td className="py-4 px-4"><div className="h-3 w-28 bg-slate-200 rounded" /></td>
+                      <td className="py-4 px-4"><div className="h-3 w-32 bg-slate-200 rounded" /></td>
+                      <td className="py-4 px-4"><div className="h-3 w-20 bg-slate-200 rounded" /></td>
+                      <td className="py-4 px-4"><div className="h-3 w-24 bg-slate-200 rounded" /></td>
+                      <td className="py-4 px-4"><div className="h-3 w-24 bg-slate-200 rounded" /></td>
+                      <td className="py-4 px-4"><div className="h-3 w-24 bg-slate-200 rounded" /></td>
+                      <td className="py-4 px-4 text-center"><div className="h-8 w-24 bg-slate-200 rounded" /></td>
                     </tr>
                   ))
                 ) : visibleLeads.length === 0 ? (
-                  <tr>
-                    <td colSpan={9} className="p-6 text-center text-slate-500">
-                      No leads found.
-                    </td>
-                  </tr>
+                  <tr><td colSpan={9} className="p-6 text-center text-slate-500">No leads found.</td></tr>
                 ) : (
                   visibleLeads.map((lead) => (
-                    <tr
-                      key={lead.id}
-                      className="border-b border-slate-100 last:border-b-0"
-                    >
+                    <tr key={lead.id} className="border-b border-slate-100 last:border-b-0">
                       <td className="py-4 px-4 align-top">
-                        <input
-                          aria-label={`Select lead ${lead.name}`}
-                          type="checkbox"
-                          checked={selectedIds.includes(lead.id)}
-                          onChange={() => toggleSelect(lead.id)}
-                        />
+                        <input aria-label={`Select lead ${lead.name}`} type="checkbox" checked={selectedIds.includes(lead.id)} onChange={() => toggleSelect(lead.id)} />
                       </td>
 
-                      <td className="py-4 px-4 align-top text-sm text-slate-700">
-                        {lead.id}
-                      </td>
-                      <td className="py-4 px-4 align-top text-sm text-slate-800">
-                        {lead.name}
-                      </td>
+                      <td className="py-4 px-4 align-top text-sm text-slate-700">{lead.id}</td>
+                      <td className="py-4 px-4 align-top text-sm text-slate-800">{lead.name}</td>
 
-                      <td className="py-4 px-4 align-top text-xs text-slate-500">
-                        {lead.email}
-                      </td>
-                      <td className="py-4 px-4 align-top text-sm text-slate-700">
-                        {lead.phone}
-                      </td>
-                      <td className="py-4 px-4 align-top text-sm text-slate-700">
-                        {lead.contactedOn ?? "—"}
-                      </td>
+                      <td className="py-4 px-4 align-top text-xs text-slate-500">{lead.email}</td>
+                      <td className="py-4 px-4 align-top text-sm text-slate-700">{lead.phone}</td>
 
-                      <td
-                        className="py-4 px-4 align-top text-sm text-slate-700 max-w-[260px] truncate"
-                        title={lead.course}
-                      >
+                      <td className="py-4 px-4 align-top text-sm text-slate-700 max-w-[260px] truncate" title={lead.course}>
                         {lead.course}
                       </td>
 
                       <td className="py-4 px-4 align-top">
-                        <span
-                          className={`inline-block px-3 py-1 rounded-full text-xs font-semibold ${
-                            STATUS_STYLES[lead.status ?? "New"]?.bg ??
-                            "bg-sky-50"
-                          } ${
-                            STATUS_STYLES[lead.status ?? "New"]?.text ??
-                            "text-sky-700"
-                          }`}
-                        >
+                        <span className={`inline-block px-3 py-1 rounded-full text-xs font-semibold ${(STATUS_STYLES[lead.status ?? "New"]?.bg) ?? "bg-sky-50"} ${(STATUS_STYLES[lead.status ?? "New"]?.text) ?? "text-sky-700"}`}>
                           {lead.status || "New"}
                         </span>
                       </td>
 
-                      <td className="py-4 px-4 align-top text-sm text-slate-600">
-                        {lead.leadSource || "—"}
-                      </td>
+                      <td className="py-4 px-4 align-top text-sm text-slate-600">{lead.leadSource || "—"}</td>
 
                       <td className="py-4 px-4 text-center">
-                        <div
-                          className="inline-flex gap-2"
-                          role="group"
-                          aria-label={`Actions for lead ${lead.name}`}
-                        >
-                          <button
-                            onClick={() => {
-                              setSelectedLead(lead);
-                              setIsOpen(true);
-                            }}
-                            className="bg-white border border-slate-200 px-2 py-1 rounded-md hover:shadow-sm"
-                            title={`View ${lead.name}`}
-                            aria-label={`View ${lead.name}`}
-                          >
+                        <div className="inline-flex gap-2" role="group" aria-label={`Actions for lead ${lead.name}`}>
+                          <button onClick={() => { setSelectedLead(lead); setIsOpen(true); }} className="bg-white border border-slate-200 px-2 py-1 rounded-md hover:shadow-sm" title={`View ${lead.name}`} aria-label={`View ${lead.name}`}>
                             <FaEye className="text-slate-600" />
                           </button>
 
-                          <button
-                            onClick={() => downloadLeadPDF(lead)}
-                            className="bg-white border border-slate-200 px-2 py-1 rounded-md hover:shadow-sm"
-                            title={`Download ${lead.name} PDF`}
-                            aria-label={`Download ${lead.name} as PDF`}
-                          >
+                          <button onClick={() => downloadLeadPDF(lead)} className="bg-white border border-slate-200 px-2 py-1 rounded-md hover:shadow-sm" title={`Download ${lead.name} PDF`} aria-label={`Download ${lead.name} as PDF`}>
                             <FaFileDownload className="text-slate-600" />
                           </button>
 
-                          <button
-                            onClick={() => deleteLead(lead.id)}
-                            className="bg-white border border-slate-200 px-2 py-1 rounded-md hover:shadow-sm text-red-600"
-                            title={`Delete ${lead.name}`}
-                            aria-label={`Delete ${lead.name}`}
-                          >
+                          <button onClick={() => deleteLead(lead.id)} className="bg-white border border-slate-200 px-2 py-1 rounded-md hover:shadow-sm text-red-600" title={`Delete ${lead.name}`} aria-label={`Delete ${lead.name}`}>
                             <FaTrash />
                           </button>
                         </div>
@@ -1093,128 +1069,62 @@ export default function CourseLeads(): JSX.Element {
 
           {/* Mobile list */}
           <div className="md:hidden p-4">
-            {loading ? (
-              <LoadingSkeleton />
-            ) : visibleLeads.length === 0 ? (
-              <div className="text-center text-slate-500">No leads found.</div>
-            ) : (
-              visibleLeads.map((lead) => (
-                <div
-                  key={lead.id}
-                  className="mb-3 bg-white p-4 rounded-xl shadow-sm border border-slate-100"
-                >
-                  <div className="flex justify-between items-start gap-3">
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <h4 className="text-sm font-medium text-slate-800 truncate">
-                          {lead.name}
-                        </h4>
-                        <span className="text-xs text-slate-400">
-                          #{lead.id}
-                        </span>
-                      </div>
-                      <p className="text-xs text-slate-500 mt-1 truncate">
-                        {lead.email}
-                      </p>
-                      <p className="text-xs text-slate-500">{lead.phone}</p>
-                      <p className="text-xs text-slate-500">
-                        {lead.contactedOn ?? "—"}
-                      </p>
-                      <p
-                        className="text-xs text-slate-600 mt-2 truncate"
-                        title={lead.course}
-                      >
-                        {lead.course}
-                      </p>
+            {loading ? <LoadingSkeleton /> : visibleLeads.length === 0 ? <div className="text-center text-slate-500">No leads found.</div> : visibleLeads.map((lead) => (
+              <div key={lead.id} className="mb-3 bg-white p-4 rounded-xl shadow-sm border border-slate-100">
+                <div className="flex justify-between items-start gap-3">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <h4 className="text-sm font-medium text-slate-800 truncate">{lead.name}</h4>
+                      <span className="text-xs text-slate-400">#{lead.id}</span>
                     </div>
+                    <p className="text-xs text-slate-500 mt-1 truncate">{lead.email}</p>
+                    <p className="text-xs text-slate-500">{lead.phone}</p>
+                    <p className="text-xs text-slate-600 mt-2 truncate" title={lead.course}>{lead.course}</p>
+                  </div>
 
-                    <div className="flex flex-col items-end gap-2">
-                      <span
-                        className={`text-xs px-2 py-1 rounded ${
-                          lead.status === "New"
-                            ? "bg-sky-50 text-sky-600"
-                            : lead.status === "Contacted"
-                            ? "bg-amber-50 text-amber-600"
-                            : "bg-emerald-50 text-emerald-600"
-                        }`}
-                      >
-                        {lead.status}
-                      </span>
+                  <div className="flex flex-col items-end gap-2">
+                    <span className={`text-xs px-2 py-1 rounded ${lead.status === "New" ? "bg-sky-50 text-sky-600" : lead.status === "Contacted" ? "bg-amber-50 text-amber-600" : "bg-emerald-50 text-emerald-600"}`}>
+                      {lead.status}
+                    </span>
 
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => {
-                            setSelectedLead(lead);
-                            setIsOpen(true);
-                          }}
-                          className="p-2 bg-white border rounded-lg"
-                          aria-label={`View ${lead.name}`}
-                        >
-                          <FaEye />
-                        </button>
-                        <button
-                          onClick={() => downloadLeadPDF(lead)}
-                          className="p-2 bg-white border rounded-lg"
-                          aria-label={`Download ${lead.name} PDF`}
-                        >
-                          <FaFileDownload />
-                        </button>
-                      </div>
+                    <div className="flex gap-2">
+                      <button onClick={() => { setSelectedLead(lead); setIsOpen(true); }} className="p-2 bg-white border rounded-lg" aria-label={`View ${lead.name}`}>
+                        <FaEye />
+                      </button>
+                      <button onClick={() => downloadLeadPDF(lead)} className="p-2 bg-white border rounded-lg" aria-label={`Download ${lead.name} PDF`}>
+                        <FaFileDownload />
+                      </button>
                     </div>
                   </div>
                 </div>
-              ))
-            )}
+              </div>
+            ))}
           </div>
 
           {/* Pagination */}
           <div className="px-6 py-4 flex items-center justify-between">
             <div className="text-sm text-slate-600" aria-live="polite">
-              Showing page{" "}
-              <span className="font-medium text-slate-800">{currentPage}</span>{" "}
-              of{" "}
-              <span className="font-medium text-slate-800">{totalPages}</span>
+              Showing page <span className="font-medium text-slate-800">{currentPage}</span> of <span className="font-medium text-slate-800">{totalPages}</span>
             </div>
 
             <div className="flex items-center gap-3 text-sm">
-              <button
-                disabled={currentPage === 1}
-                onClick={() => gotoPage(Math.max(1, currentPage - 1))}
-                className="px-2 py-1 disabled:opacity-50"
-                aria-label="Previous page"
-              >
+              <button disabled={currentPage === 1} onClick={() => setCurrentPage((p) => Math.max(1, p - 1))} className="px-2 py-1 disabled:opacity-50" aria-label="Previous page">
                 <FaChevronLeft />
               </button>
 
               <nav className="flex items-center gap-2" aria-label="Pagination">
                 {getPageRange(currentPage, totalPages).map((p, idx) =>
                   p === "gap" ? (
-                    <span key={`g-${idx}`} className="text-slate-400">
-                      …
-                    </span>
+                    <span key={`g-${idx}`} className="text-slate-400">…</span>
                   ) : (
-                    <button
-                      key={p}
-                      onClick={() => gotoPage(Number(p))}
-                      className={`text-sm ${
-                        p === currentPage
-                          ? "text-slate-900 font-medium"
-                          : "text-slate-600 hover:underline"
-                      }`}
-                      aria-current={p === currentPage ? "page" : undefined}
-                    >
+                    <button key={p} onClick={() => setCurrentPage(Number(p))} className={`text-sm ${p === currentPage ? "text-slate-900 font-medium" : "text-slate-600 hover:underline"}`} aria-current={p === currentPage ? "page" : undefined}>
                       {p}
                     </button>
                   )
                 )}
               </nav>
 
-              <button
-                disabled={currentPage === totalPages}
-                onClick={() => gotoPage(Math.min(totalPages, currentPage + 1))}
-                className="px-2 py-1 disabled:opacity-50"
-                aria-label="Next page"
-              >
+              <button disabled={currentPage === totalPages} onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))} className="px-2 py-1 disabled:opacity-50" aria-label="Next page">
                 <FaChevronRight />
               </button>
             </div>
@@ -1224,44 +1134,17 @@ export default function CourseLeads(): JSX.Element {
 
       {/* Modal */}
       {isOpen && selectedLead && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="lead-modal-title"
-        >
-          <div
-            className="absolute inset-0 bg-black/30 backdrop-blur-sm"
-            onClick={() => setIsOpen(false)}
-          />
+        <div className="fixed inset-0 z-50 flex items-center justify-center" role="dialog" aria-modal="true" aria-labelledby="lead-modal-title">
+          <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={() => setIsOpen(false)} />
           <div className="relative w-[94%] max-w-2xl bg-white rounded-2xl p-6 shadow-2xl border border-slate-50 transform transition-all">
             <div className="flex justify-between items-start gap-3">
               <div>
-                <h3
-                  id="lead-modal-title"
-                  className="text-lg font-semibold text-slate-900"
-                >
-                  Lead Details
-                </h3>
-                <p className="text-sm text-slate-500 mt-1">
-                  ID #{selectedLead.id}
-                </p>
+                <h3 id="lead-modal-title" className="text-lg font-semibold text-slate-900">Lead Details</h3>
+                <p className="text-sm text-slate-500 mt-1">ID #{selectedLead.id}</p>
               </div>
 
               <div className="flex items-center gap-2">
-                <button
-                  onClick={debugRequest}
-                  className="px-3 py-1 rounded-md bg-gray-100 text-sm text-slate-700 hover:bg-gray-200"
-                  aria-label="Debug request"
-                >
-                  Debug
-                </button>
-
-                <button
-                  onClick={() => setIsOpen(false)}
-                  className="p-2 rounded-lg hover:bg-slate-100"
-                  aria-label="Close"
-                >
+                <button onClick={() => setIsOpen(false)} className="p-2 rounded-lg hover:bg-slate-100" aria-label="Close">
                   <FaTimes />
                 </button>
               </div>
@@ -1277,35 +1160,18 @@ export default function CourseLeads(): JSX.Element {
 
                 <div>
                   <Detail label="Status" value={selectedLead.status} />
-                  <Detail
-                    label="Lead Source"
-                    value={selectedLead.leadSource || "—"}
-                  />
-                  <Detail
-                    label="Contacted On"
-                    value={selectedLead.contactedOn || "—"}
-                  />
+                  <Detail label="Lead Source" value={selectedLead.leadSource || "—"} />
+                  <Detail label="Contacted On" value={selectedLead.contactedOn || "—"} />
                 </div>
               </div>
 
               <div className="mt-3">
-                <label className="text-sm text-slate-600 font-medium">
-                  Courses
-                </label>
+                <label className="text-sm text-slate-600 font-medium">Courses</label>
                 <div className="mt-2 flex flex-wrap gap-2">
-                  {(selectedLead.courses && selectedLead.courses.length > 0
-                    ? selectedLead.courses
-                    : selectedLead.course
-                    ? [selectedLead.course]
-                    : []
-                  ).map((c, idx) => (
-                    <span
-                      key={idx}
-                      className="px-3 py-1 bg-slate-100 rounded-full text-sm text-slate-700"
-                    >
-                      {c}
-                    </span>
-                  ))}
+                  {(selectedLead.courses && selectedLead.courses.length > 0 ? selectedLead.courses : selectedLead.course ? [selectedLead.course] : [])
+                    .map((c, idx) => (
+                      <span key={idx} className="px-3 py-1 bg-slate-100 rounded-full text-sm text-slate-700">{c}</span>
+                    ))}
                 </div>
               </div>
             </div>
@@ -1334,42 +1200,14 @@ export default function CourseLeads(): JSX.Element {
             <MessageBox label="Message" value={selectedLead.message ?? ""} />
 
             <div className="mt-4">
-              <label className="block text-sm text-slate-600 font-medium mb-2">
-                Admin Notes
-              </label>
-              <textarea
-                value={adminNotes}
-                onChange={(e) => setAdminNotes(e.target.value)}
-                className="w-full p-3 border rounded-lg min-h-[100px]"
-                placeholder="Add internal notes or remarks about this lead"
-                aria-label="Admin notes"
-              />
+              <label className="block text-sm text-slate-600 font-medium mb-2">Admin Notes</label>
+              <textarea value={adminNotes} onChange={(e) => setAdminNotes(e.target.value)} className="w-full p-3 border rounded-lg min-h-[100px]" placeholder="Add internal notes or remarks about this lead" aria-label="Admin notes" />
 
               <div className="flex justify-between gap-3 mt-4">
-                <button
-                  onClick={() => setIsOpen(false)}
-                  className="px-4 py-2 rounded-xl bg-white border"
-                >
-                  Close
-                </button>
+                <button onClick={() => setIsOpen(false)} className="px-4 py-2 rounded-xl bg-white border">Close</button>
                 <div className="flex gap-2">
-                  {selectedLead &&
-                    adminNotes !== (selectedLead.admin_notes ?? "") && (
-                      <button
-                        onClick={() => saveAdminNotes()}
-                        className="px-4 py-2 rounded-xl bg-sky-600 hover:bg-sky-700 text-white"
-                      >
-                        Save Notes
-                      </button>
-                    )}
-                  <button
-                    onClick={() => {
-                      downloadLeadPDF(selectedLead);
-                    }}
-                    className="px-4 py-2 rounded-xl bg-slate-800 text-white"
-                  >
-                    Download PDF
-                  </button>
+                  <button onClick={() => saveAdminNotes()} className="px-4 py-2 rounded-xl bg-sky-600 hover:bg-sky-700 text-white">Save Notes</button>
+                  <button onClick={() => { downloadLeadPDF(selectedLead); }} className="px-4 py-2 rounded-xl bg-slate-800 text-white">Download PDF</button>
                 </div>
               </div>
             </div>
@@ -1390,10 +1228,7 @@ function LoadingSkeleton(): JSX.Element {
   return (
     <div className="space-y-3">
       {Array.from({ length: 3 }).map((_, i) => (
-        <div
-          key={i}
-          className="animate-pulse bg-white rounded-xl p-4 shadow-sm border border-slate-50"
-        >
+        <div key={i} className="animate-pulse bg-white rounded-xl p-4 shadow-sm border border-slate-50">
           <div className="flex justify-between items-center">
             <div>
               <div className="h-4 w-44 bg-slate-200 rounded mb-2" />

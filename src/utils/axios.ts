@@ -1,49 +1,55 @@
 import axios from "axios";
 import toast from "react-hot-toast";
 
-/**
- * Base URL rules:
- * - If NEXT_PUBLIC_API_BASE_URL is set → use it
- * - Else → use local backend
- */
-const API_BASE =
-  process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") ||
-  "http://127.0.0.1:8000";
-
-const api = axios.create({
-  baseURL: `${API_BASE}/api`,
+const instance = axios.create({
+  // Use frontend proxy so Next can forward requests to Laravel and avoid CORS/html errors
+  baseURL: "/api",
   withCredentials: true,
   headers: {
     Accept: "application/json",
   },
 });
 
-/**
- * Ensure Sanctum CSRF cookie
- * MUST NOT go through /api
- */
-export async function ensureCsrfCookie() {
-  await axios.get(`${API_BASE}/sanctum/csrf-cookie`, {
-    withCredentials: true,
-  });
-}
-
-/**
- * Request interceptor
- * - Ensures CSRF cookie for write operations
- * - NO Bearer tokens (Sanctum uses cookies)
- */
-api.interceptors.request.use(async (config) => {
+// Attach token automatically
+// Ensure CSRF cookie is present for stateful requests and attach stored bearer token.
+// We make the request handler async so we can fetch the proxied CSRF cookie when needed.
+instance.interceptors.request.use(async (config) => {
   if (typeof window === "undefined") return config;
 
+  // For non-safe methods, ensure XSRF cookie exists. axios will read XSRF cookie and set X-XSRF-TOKEN header.
   const method = (config.method || "get").toLowerCase();
   const needsCsrf = !["get", "head", "options"].includes(method);
 
+  // If we need CSRF and the XSRF cookie isn't present, fetch it from the proxied endpoint.
   if (needsCsrf) {
-    const hasXsrf = document.cookie.includes("XSRF-TOKEN");
-    if (!hasXsrf) {
-      await ensureCsrfCookie();
+    try {
+      const hasXSRF = document.cookie && document.cookie.includes("XSRF-TOKEN");
+      if (!hasXSRF) {
+        // proxied route will forward Set-Cookie to browser
+        await fetch("/api/sanctum/csrf-cookie", { credentials: "include" });
+      }
+    } catch (e) {
+      // ignore network issues here; request will likely fail with 419/401 later
+      console.debug("Failed to ensure CSRF cookie:", e);
     }
+  }
+
+  // support multiple possible token keys (frontend may store under different names)
+  const tokenKeys = ["token", "admin_token", "access_token"];
+  let token: string | null = null;
+  for (const k of tokenKeys) {
+    const t = localStorage.getItem(k);
+    if (t) {
+      token = t;
+      break;
+    }
+  }
+
+  // ensure headers object exists
+  config.headers = config.headers || {};
+  if (token) {
+    // set Authorization header
+    (config.headers as Record<string, string>).Authorization = `Bearer ${token}`;
   }
 
   return config;
@@ -56,11 +62,22 @@ api.interceptors.response.use(
   (res) => res,
   (error) => {
     const status = error?.response?.status;
+    // Avoid handling during SSR or non-browser contexts
+    if (typeof window !== "undefined" && status === 401) {
+      try {
+        // clear any local debug token
+        localStorage.removeItem("admin_token");
+      } catch {}
 
-    if (status === 401 && typeof window !== "undefined") {
-      toast.error("Session expired. Please login again.");
+      try {
+        toast.error("Unauthenticated. Redirecting to login...");
+      } catch {}
+
+      // redirect to login after a short delay to allow toast to show
       setTimeout(() => {
-        window.location.href = "/";
+        try {
+          window.location.href = "/";
+        } catch {}
       }, 800);
     }
 

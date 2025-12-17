@@ -128,23 +128,33 @@ export default function AddNewCoursePage() {
   function resolveImageUrl(img?: any) {
     const fallback = "/default-uploads/default-course.png";
     if (!img) return fallback;
-
-    // If it's an object (e.g. { url, secure_url, path }) prefer common keys
+    // support image as object (returned by some upload APIs)
     if (typeof img === "object") {
-      const candidate = img.secure_url || img.url || img.path || img.file || img.thumbnail || img.src;
-      if (candidate && String(candidate).trim() !== "") img = candidate;
+      // try common properties
+      // @ts-ignore
+      const maybe = (img.url || img.secure_url || img.path || img.file || img.image) as string | undefined;
+      if (maybe) img = maybe;
       else return fallback;
     }
-
-    // Now img should be a string
-    if (typeof img !== "string") return fallback;
-    if (/^https?:\/\//i.test(img)) return img;
+    if (typeof img === "string" && /^https?:\/\//i.test(img)) return img;
     // If the image path does not start with '/', prepend '/storage/'
-    const path = img.startsWith("/") ? img : `/storage/${img}`;
+    const path = (typeof img === "string" && img.startsWith("/")) ? img : `/storage/${img}`;
     const base = (axios.defaults.baseURL || "").replace(/\/?api\/?$/i, "");
     const url = base + path;
     console.debug("[AddNewCourse] course.image=", img, "resolved=", url);
     return url;
+  }
+
+  // Helper: try multiple keys on an object and return the first non-empty value
+  function pickFirst<T = any>(obj: Record<string, any> | undefined | null, keys: string[]): T | undefined {
+    if (!obj) return undefined;
+    for (const k of keys) {
+      if (Object.prototype.hasOwnProperty.call(obj, k)) {
+        const v = obj[k];
+        if (v !== undefined && v !== null) return v as T;
+      }
+    }
+    return undefined;
   }
 
   // (moved) Load course data if courseId is in URL (edit mode)
@@ -158,36 +168,40 @@ export default function AddNewCoursePage() {
       const courseRes = await axios.get(`/courses/${id}`);
       const course = courseRes.data?.data || courseRes.data;
 
-      // Populate Step 1 fields (be tolerant to different backend shapes)
-      console.debug("[AddNewCourse] loadCourseData course:", course);
-      const titleVal = pickFirst(course, ["title", "name", "course_title", "course_name"]);
-      const descVal = pickFirst(course, ["description", "short_description", "details"]);
-      const priceVal = pickFirst(course, ["price", "fees", "cost"]);
-      const ratingVal = pickFirst(course, ["rating", "avg_rating"]);
-      const studentsVal = pickFirst(course, ["students", "enrolled", "student_count"]);
-      const categoryVal = pickFirst(course, ["category_id", "categoryId", "category"]);
-      const statusVal = pickFirst(course, ["status", "course_status"]);
-      const modeVal = pickFirst(course, ["mode", "visibility"]);
-      const imageVal = pickFirst(course, ["image", "banner_image", "image_url", "imageUrl", "thumbnail"]);
+  // Debug: log fetched course shape to help diagnose edit-population issues
+  console.debug("[AddNewCourse] loadCourseData - fetched course:", course);
 
-      setTitle(titleVal ? String(titleVal) : "");
-      setDescription(descVal ? String(descVal) : "");
-      setPrice(priceVal !== undefined && priceVal !== null ? String(priceVal) : "");
-      setRating(ratingVal !== undefined && ratingVal !== null ? String(ratingVal) : "");
-      setStudents(studentsVal !== undefined && studentsVal !== null ? String(studentsVal) : "");
-      setCategoryId(categoryVal !== undefined && categoryVal !== null ? String(categoryVal) : "");
-      setStatus(statusVal ? String(statusVal) : "none");
-      setMode(modeVal ? String(modeVal) : "active");
+      // Populate Step 1 fields (be tolerant to various API response shapes / key names)
+      // Try some likely key names for each field
+      const titleVal = pickFirst<string>(course, ["title", "name", "course_title", "courseName", "courseTitle"]) || "";
+      const descVal = pickFirst<string>(course, ["description", "desc", "course_description"]) || "";
+      const priceVal = pickFirst<number | string>(course, ["price", "cost"]) ?? "";
+      const ratingVal = pickFirst<number | string>(course, ["rating"]) ?? "";
+      const studentsVal = pickFirst<number | string>(course, ["students", "student_count", "enrolled_count"]) ?? "";
+      const categoryVal = pickFirst<number | string>(course, ["category_id", "categoryId", "category"]) ?? "";
+      const statusVal = pickFirst<string>(course, ["status"]) || "none";
+      const modeVal = pickFirst<string>(course, ["mode"]) || "active";
+      const imageVal = pickFirst<any>(course, ["image", "banner", "thumbnail", "image_url", "imageUrl"]);
+
+      setTitle(String(titleVal || ""));
+      setDescription(String(descVal || ""));
+      setPrice(priceVal !== "" && priceVal != null ? String(priceVal) : "");
+      setRating(ratingVal !== "" && ratingVal != null ? String(ratingVal) : "");
+      setStudents(studentsVal !== "" && studentsVal != null ? String(studentsVal) : "");
+      setCategoryId(categoryVal !== "" && categoryVal != null ? String(categoryVal) : "");
+      setStatus(statusVal || "none");
+      setMode(modeVal || "active");
       if (imageVal) {
         setImagePreview(resolveImageUrl(imageVal)); // normalize relative paths to absolute
-      } else {
-        setImagePreview(null);
       }
 
       // Fetch course-details data
       try {
-        const detailsRes = await axios.get(`/course-details?course_id=${id}`);
-        const details = Array.isArray(detailsRes.data) ? detailsRes.data[0] : detailsRes.data?.data?.[0] || detailsRes.data;
+  const detailsRes = await axios.get(`/course-details?course_id=${id}`);
+  const details = Array.isArray(detailsRes.data) ? detailsRes.data[0] : detailsRes.data?.data?.[0] || detailsRes.data;
+
+  // Debug: log fetched course-details shape for easier debugging when fields don't populate
+  console.debug("[AddNewCourse] loadCourseData - fetched course-details:", details);
 
         if (details) {
           // Populate Step 2 fields

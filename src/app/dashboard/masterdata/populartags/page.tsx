@@ -10,9 +10,8 @@ const API = "/api/popular-tags"; // use frontend proxy route
 export default function AllPopularTags() {
   const [searchTerm, setSearchTerm] = useState("");
   const debouncedSearchTerm = useDebounce(searchTerm, 200);
-  type Tag = { id?: number; name?: string; description?: string; usage_count?: number; created_at?: string; updated_at?: string };
-  const [tags, setTags] = useState<Tag[]>([]);
-  const [editingId, setEditingId] = useState<number | null>(null);
+  const [tags, setTags] = useState([]);
+  const [editingId, setEditingId] = useState(null);
   const [editName, setEditName] = useState("");
   const [editDescription, setEditDescription] = useState("");
   const [editUsageCount, setEditUsageCount] = useState("");
@@ -26,13 +25,13 @@ export default function AllPopularTags() {
   // Fetch tags
   async function fetchTags() {
     try {
-      const res = await fetch(API, { credentials: "include" });
+  const res = await fetch(API, { credentials: "include" });
       const text = await res.text();
-      let parsed = null;
-      try { parsed = JSON.parse(text); } catch { parsed = null; }
-      const data = parsed ?? [];
-      setTags(Array.isArray(data) ? data : data?.data || []);
-    } catch {
+  let parsed = null;
+  try { parsed = JSON.parse(text); } catch { parsed = null; }
+  const data = parsed ?? [];
+  setTags(Array.isArray(data) ? data : data?.data || []);
+    } catch (_err) {
       toast.error("Failed to load tags.");
     }
   }
@@ -51,7 +50,9 @@ export default function AllPopularTags() {
 
     // Ensure CSRF cookie exists for Laravel Sanctum (XSRF-TOKEN)
     // Client-side duplicate prevention
-    const exists = tags.some((t) => (t.name || "").toLowerCase() === newTagName.trim().toLowerCase());
+    const exists = tags.some(
+      (t) => t?.name && t.name.toLowerCase() === newTagName.trim().toLowerCase()
+    );
     if (exists) return toast.error("Duplicate tags are not allowed.");
 
     try {
@@ -62,7 +63,7 @@ export default function AllPopularTags() {
         // small pause to allow cookie to be set
         await new Promise((r) => setTimeout(r, 150));
       }
-    } catch (e: unknown) {
+    } catch (e) {
       console.warn('Failed to ensure CSRF cookie before addTag', e);
     }
 
@@ -91,7 +92,7 @@ export default function AllPopularTags() {
         return toast.error(String(msg));
       }
 
-      const newTagObj: Tag | null = parsed?.tag ?? parsed?.data?.tag ?? (parsed && parsed.id ? parsed : null);
+      const newTagObj = parsed?.tag ?? parsed?.data?.tag ?? (parsed && parsed.id ? parsed : null);
       if (newTagObj) {
         setTags([newTagObj, ...tags]);
         setNewTagName("");
@@ -107,8 +108,8 @@ export default function AllPopularTags() {
         setIsModalOpen(false);
         toast.success("Tag added (response parsed unexpectedly)");
       }
-    } catch (e: unknown) {
-      console.error("addTag error:", e);
+    } catch (_err) {
+      console.error("addTag error:", _err);
       toast.error("Error adding tag.");
     }
   };
@@ -118,7 +119,9 @@ export default function AllPopularTags() {
     if (!editName.trim()) return toast.error("Tag name is required.");
 
     // Prevent duplicates when renaming
-    const exists = tags.some((t) => (t.id !== id) && ((t.name || "").toLowerCase() === editName.trim().toLowerCase()));
+    const exists = tags.some(
+      (t) => t.id !== id && t?.name && t.name.toLowerCase() === editName.trim().toLowerCase()
+    );
     if (exists) return toast.error("Duplicate tags are not allowed.");
 
     try {
@@ -146,8 +149,8 @@ export default function AllPopularTags() {
         return toast.error(preview);
       }
 
-  const tag: Tag | null = parsed?.tag ?? parsed?.data?.tag ?? null;
-  if (tag) setTags(tags.map((t) => (t.id === id ? tag : t)));
+      const tag = parsed?.tag ?? parsed?.data?.tag ?? null;
+      if (tag) setTags(tags.map((t) => (t.id === id ? tag : t)));
       setEditingId(null);
       toast.success("Tag updated successfully!");
     } catch (e: unknown) {
