@@ -174,6 +174,7 @@ import { useState, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 import toast, { Toaster } from "react-hot-toast";
 import { FiMail, FiLock, FiEye, FiEyeOff, FiLogIn } from "react-icons/fi";
+import axios from "../utils/axios";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -218,30 +219,28 @@ export default function LoginPage() {
     setError("");
 
     try {
-      const res = await fetch("http://127.0.0.1:8000/api/admin/login", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json",
-        },
-        body: JSON.stringify({ email, password }),
-      });
+      // axios instance will ensure CSRF cookie (via interceptor) and attach stored token fallback
+      const res = await axios.post("/admin/login", { email, password });
 
-      const data = await res.json();
+      const data = res.data;
 
-      if (!res.ok) {
-        setError(data.message || "Invalid email or password");
-        setLoading(false);
-        return;
+      // Save token to localStorage for fallback use (the app also supports cookie-based sessions)
+      if (data?.token) {
+        localStorage.setItem("admin_token", data.token);
       }
 
-      // Save token
-      localStorage.setItem("admin_token", data.token);
+      // Save avatar if returned
+      if (data?.user?.avatar) {
+        localStorage.setItem("admin_avatar", data.user.avatar);
+        // notify header via event so avatar updates immediately
+        window.dispatchEvent(new CustomEvent("admin:profileUpdated", { detail: { avatar: data.user.avatar } }));
+      }
 
-      // Redirect
+      // Redirect to dashboard
       window.location.href = "/dashboard";
-    } catch {
-      setError("Something went wrong. Check backend connection.");
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || err?.message || "Something went wrong. Check backend connection.";
+      setError(msg);
     }
 
     setLoading(false);

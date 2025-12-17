@@ -132,35 +132,6 @@ export default function JobAssistanceProgramPage() {
                 defaultValue={p.desc}
                 className="w-full border border-gray-300 rounded-lg p-3 shadow-sm mb-6"
               />
-
-              {/* <InnerCard>
-                <label className="font-semibold block mb-3 text-gray-600">
-                  Select Icon Image
-                </label>
-
-                <div className="flex items-center gap-6">
-                  <label className="flex items-center gap-2 bg-blue-800 text-white px-5 py-3 rounded-lg cursor-pointer hover:bg-blue-700 transition">
-                    <FiUploadCloud size={20} />
-                    Choose Image
-                    <input
-                      type="file"
-                      className="hidden"
-                      accept="image/*"
-                      onChange={(e) => handleUpload(e, `program_${p.id}`)}
-                    />
-                  </label>
-
-                  {preview[`program_${p.id}`] && (
-                    <Image
-                      src={preview[`program_${p.id}`]}
-                      width={120}
-                      height={120}
-                      alt="preview"
-                      className="rounded-lg border shadow object-cover"
-                    />
-                  )}
-                </div>
-              </InnerCard> */}
             </InnerCard>
           </PageCard>
         ))}

@@ -74,6 +74,7 @@ export default function ContactPage() {
 
   // record id (if needed)
   const [recordId, setRecordId] = useState<number | null>(null);
+  const [isNewRecord, setIsNewRecord] = useState<boolean>(true);
 
   /* ----------------------------
      Load existing content from backend
@@ -150,6 +151,7 @@ export default function ContactPage() {
           }
         }
         setRecordId(body?.id ?? null);
+        setIsNewRecord(!body?.id); // Track if this is a new record
       } catch (err: any) {
         console.error("Failed to load contact page:", err);
         toast.error("Failed to load contact page.");
@@ -258,7 +260,9 @@ export default function ContactPage() {
       if (updated && typeof updated === "object" && (updated as Record<string, unknown>)["hero_image"]) {
         setBannerImage(String((updated as Record<string, unknown>)["hero_image"]));
       }
-      toast.success("Contact Page Saved successfully.");
+      const successMsg = isNewRecord ? "Contact Page Saved successfully." : "Contact Page Updated successfully.";
+      toast.success(successMsg);
+      setIsNewRecord(false);
 
       // re-fetch fresh data to ensure UI matches backend
       try {

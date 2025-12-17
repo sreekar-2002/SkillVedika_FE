@@ -41,6 +41,7 @@ export default function DashboardContent({
   loading,
 }: DashboardContentProps) {
   const [leads, setLeads] = useState<Lead[]>([]);
+  const [mounted, setMounted] = useState(false);
   const [monthlyData, setMonthlyData] = useState<
     Array<{ month: string; leads: number }>
   >([]);
@@ -113,6 +114,12 @@ export default function DashboardContent({
     fetchLeadsAndGenerateChart();
   }, []);
 
+  // mark mounted on client to avoid rendering complex DOM-measuring
+  // chart library during SSR / hydration which can cause warnings
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   const filteredLeads = leads.filter(
     (lead) =>
       lead.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -139,12 +146,15 @@ export default function DashboardContent({
           Monthly Leads (Normalized 0–1)
         </h3>
 
-        <div style={{ width: "100%", height: 450 }}>
-          <ResponsiveContainer>
-            <AreaChart
-              data={monthlyData}
-              margin={{ top: 20, right: 30, left: 10, bottom: 20 }}
-            >
+        <div style={{ width: "100%", height: 450, minWidth: 0, minHeight: 200 }}>
+          {/* Render the chart only on the client to avoid Recharts measuring
+              problems during SSR/hydration (width/height -1 warnings). */}
+          {mounted ? (
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart
+                data={monthlyData}
+                margin={{ top: 20, right: 30, left: 10, bottom: 20 }}
+              >
               {/* ✅ Gradient fill */}
               <defs>
                 <linearGradient id="colorLeads" x1="0" y1="0" x2="0" y2="1">
@@ -196,8 +206,13 @@ export default function DashboardContent({
                   strokeWidth: 1.5,
                 }}
               />
-            </AreaChart>
-          </ResponsiveContainer>
+              </AreaChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="h-full flex items-center justify-center text-gray-400">
+              Loading chart...
+            </div>
+          )}
         </div>
       </section>
 
@@ -254,9 +269,7 @@ export default function DashboardContent({
                     <td className="py-3 px-4">{lead.name}</td>
                     <td className="py-3 px-4">{lead.email}</td>
                     <td className="py-3 px-4">{lead.phone}</td>
-                    <td className="py-3 px-4">
-                      {lead.course_name || "N/A"}
-                    </td>
+                    <td className="py-3 px-4">{lead.course_name || "N/A"}</td>
                     <td className="py-3 px-4">{formatDate(lead.created_at)}</td>
                     <td className="py-3 px-4 text-center">
                       <button className="text-blue-600 hover:text-blue-800 transition">

@@ -114,8 +114,10 @@ export function BannerBox({ label, image, onUpload, iconSize = 18 }: { label: st
               : image && typeof image === "object"
               ? (image.url as string) || (image.secure_url as string) || (image.path as string) || ""
               : "";
+          // Use an existing fallback image shipped in public/default-uploads.
+          // placeholder.png did not exist in the repo which caused 404s in dev.
           const finalSrc: string =
-            previewSrc || src || "/default-uploads/placeholder.png";
+            previewSrc || src || "/default-uploads/Skill-vedika-Logo.jpg";
 
           return (
             <div className="flex flex-col items-start gap-2">

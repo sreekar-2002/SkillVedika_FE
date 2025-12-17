@@ -124,6 +124,14 @@ export default function Sidebar({ isOpen }: SidebarProps) {
           href: "/dashboard/CommonSection/LiveFreeDemo",
         },
         // {
+        //   name: "Header Settings",
+        //   href: "/dashboard/CommonSection/HeaderSettings",
+        // },
+        // {
+        //   name: "Footer Settings",
+        //   href: "/dashboard/CommonSection/FooterSettings",
+        // },
+        // {
         //   name: "Job Program Support",
         //   href: "/dashboard/CommonSection/JobProgramSupport",
         // },
@@ -135,7 +143,20 @@ export default function Sidebar({ isOpen }: SidebarProps) {
       icon: <FaTags />,
       href: "/dashboard/SEOManagement",
     },
-    { name: "Settings", icon: <MdSettings />, href: "/dashboard/Settings" },
+    {
+      name: "Settings",
+      icon: <MdSettings />,
+      subMenu: [
+        {
+          name: "Header Settings",
+          href: "/dashboard/CommonSection/HeaderSettings",
+        },
+        {
+          name: "Footer Settings",
+          href: "/dashboard/CommonSection/FooterSettings",
+        },
+      ],
+    },
   ];
 
   // ===== AUTO OPEN THE PARENT MENU BASED ON CURRENT URL =====

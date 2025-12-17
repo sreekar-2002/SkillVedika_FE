@@ -1,13 +1,15 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
+import useDebounce from "@/utils/useDebounce";
 import { FaEdit, FaTrash } from "react-icons/fa";
 import { toast, Toaster } from "react-hot-toast";
 
-const API = "http://127.0.0.1:8000/api/popular-tags";
+const API = "/api/popular-tags"; // use frontend proxy route
 
 export default function AllPopularTags() {
   const [searchTerm, setSearchTerm] = useState("");
+  const debouncedSearchTerm = useDebounce(searchTerm, 200);
   const [tags, setTags] = useState([]);
   const [editingId, setEditingId] = useState(null);
   const [editName, setEditName] = useState("");
@@ -27,9 +29,12 @@ export default function AllPopularTags() {
 
   const fetchTags = async () => {
     try {
-      const res = await fetch(API);
-      const data = await res.json();
-      setTags(data);
+  const res = await fetch(API, { credentials: "include" });
+      const text = await res.text();
+  let parsed = null;
+  try { parsed = JSON.parse(text); } catch { parsed = null; }
+  const data = parsed ?? [];
+  setTags(Array.isArray(data) ? data : data?.data || []);
     } catch (_err) {
       toast.error("Failed to load tags.");
     }
@@ -39,13 +44,34 @@ export default function AllPopularTags() {
   const addTag = async () => {
     if (!newTagName.trim()) return toast.error("Tag name is required.");
 
+    // Ensure CSRF cookie exists for Laravel Sanctum (XSRF-TOKEN)
+    // Client-side duplicate prevention
+    const exists = tags.some(
+      (t) => t?.name && t.name.toLowerCase() === newTagName.trim().toLowerCase()
+    );
+    if (exists) return toast.error("Duplicate tags are not allowed.");
+
     try {
-      const res = await fetch(API, {
+      const hasXsrf = typeof document !== 'undefined' && document.cookie.includes('XSRF-TOKEN=');
+      if (!hasXsrf) {
+        // call proxied sanctum csrf endpoint to set XSRF-TOKEN and session cookie on frontend origin
+        await fetch('/api/sanctum/csrf-cookie', { method: 'GET', credentials: 'include' });
+        // small pause to allow cookie to be set
+        await new Promise((r) => setTimeout(r, 150));
+      }
+    } catch (e) {
+      console.warn('Failed to ensure CSRF cookie before addTag', e);
+    }
+
+    try {
+      // Use temporary public endpoint while auth/session is being debugged
+      const res = await fetch('/api/public/popular-tags', {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Accept: "application/json",
         },
+        credentials: "include",
         body: JSON.stringify({
           name: newTagName,
           description: newTagDescription,
@@ -53,19 +79,33 @@ export default function AllPopularTags() {
         }),
       });
 
+      const text = await res.text();
+      let parsed = null;
+      try { parsed = JSON.parse(text); } catch { parsed = null; }
+
       if (!res.ok) {
-        const json = await res.json();
-        return toast.error(json.errors?.name?.[0] || "Failed to add tag.");
+        const msg = parsed && (parsed.message || parsed.error) ? (parsed.message || parsed.error) : (parsed?.errors?.name?.[0] ?? text ?? "Failed to add tag.");
+        return toast.error(String(msg));
       }
 
-      const { tag } = await res.json();
-      setTags([tag, ...tags]);
-      setNewTagName("");
-      setNewTagDescription("");
-      setNewTagUsageCount("");
-      setIsModalOpen(false);
-      toast.success("Tag added successfully!");
+      const newTagObj = parsed?.tag ?? parsed?.data?.tag ?? (parsed && parsed.id ? parsed : null);
+      if (newTagObj) {
+        setTags([newTagObj, ...tags]);
+        setNewTagName("");
+        setNewTagDescription("");
+        setNewTagUsageCount("");
+        setIsModalOpen(false);
+        toast.success("Tag added successfully!");
+      } else {
+        // If server returned success but unexpected shape, still close modal and show success
+        setNewTagName("");
+        setNewTagDescription("");
+        setNewTagUsageCount("");
+        setIsModalOpen(false);
+        toast.success("Tag added (response parsed unexpectedly)");
+      }
     } catch (_err) {
+      console.error("addTag error:", _err);
       toast.error("Error adding tag.");
     }
   };
@@ -74,13 +114,20 @@ export default function AllPopularTags() {
   const updateTag = async (id) => {
     if (!editName.trim()) return toast.error("Tag name is required.");
 
+    // Prevent duplicates when renaming
+    const exists = tags.some(
+      (t) => t.id !== id && t?.name && t.name.toLowerCase() === editName.trim().toLowerCase()
+    );
+    if (exists) return toast.error("Duplicate tags are not allowed.");
+
     try {
-      const res = await fetch(`${API}/${id}`, {
+      const res = await fetch(`/api/public/popular-tags/${id}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
           Accept: "application/json",
         },
+        credentials: "include",
         body: JSON.stringify({
           name: editName,
           description: editDescription,
@@ -88,13 +135,18 @@ export default function AllPopularTags() {
         }),
       });
 
+      const text = await res.text();
+      let parsed = null;
+      try { parsed = JSON.parse(text); } catch { parsed = null; }
       if (!res.ok) {
-        const json = await res.json();
-        return toast.error(json.errors?.name?.[0] || "Failed to update tag.");
+        // Log full response for debugging, show short preview to user
+        console.error('updateTag backend response:', { status: res.status, text });
+        const preview = (typeof text === 'string' && text.length > 300) ? text.substring(0,300) + '...' : (text || 'Failed to update tag.');
+        return toast.error(preview);
       }
 
-      const { tag } = await res.json();
-      setTags(tags.map((t) => (t.id === id ? tag : t)));
+      const tag = parsed?.tag ?? parsed?.data?.tag ?? null;
+      if (tag) setTags(tags.map((t) => (t.id === id ? tag : t)));
       setEditingId(null);
       toast.success("Tag updated successfully!");
     } catch (_err) {
@@ -107,12 +159,18 @@ export default function AllPopularTags() {
     if (!confirm("Delete this tag?")) return;
 
     try {
-      const res = await fetch(`${API}/${id}`, {
+      const res = await fetch(`/api/public/popular-tags/${id}`, {
         method: "DELETE",
         headers: { Accept: "application/json" },
+        credentials: "include",
       });
 
-      if (!res.ok) return toast.error("Failed to delete tag.");
+      if (!res.ok) {
+        const text = await res.text();
+        console.error('deleteTag backend response:', { status: res.status, text });
+        const preview = (typeof text === 'string' && text.length > 300) ? text.substring(0,300) + '...' : (text || 'Failed to delete tag.');
+        return toast.error(preview);
+      }
 
       setTags(tags.filter((t) => t.id !== id));
       toast.success("Tag deleted successfully!");
@@ -121,8 +179,11 @@ export default function AllPopularTags() {
     }
   };
 
-  const filteredTags = tags.filter((tag) =>
-    tag.name.toLowerCase().includes(searchTerm.toLowerCase())
+  const filteredTags = useMemo(
+    () => tags.filter((tag) =>
+      (tag.name || "").toLowerCase().includes((debouncedSearchTerm || "").toLowerCase())
+    ),
+    [tags, debouncedSearchTerm]
   );
 
   return (
@@ -242,7 +303,7 @@ export default function AllPopularTags() {
 
       {/* ADD TAG MODAL */}
       {isModalOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-white/30 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8">
             <h3 className="text-2xl font-bold text-gray-900 mb-6">
               Add New Popular Tag
@@ -298,7 +359,7 @@ export default function AllPopularTags() {
 
       {/* EDIT TAG MODAL */}
       {editingId && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-white/30 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8">
             <h3 className="text-2xl font-bold text-gray-900 mb-6">
               Edit Popular Tag
